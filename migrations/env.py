@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-import os
+from src.extraction.config import settings
+
 
 config = context.config
-config.set_main_option("sqlalchemy.url", os.environ["RCN_DB__URL"])
+config.set_main_option("sqlalchemy.url", settings.DB_URL)
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
