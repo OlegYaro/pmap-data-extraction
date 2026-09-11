@@ -1,0 +1,100 @@
+[project]
+name = "rcn-extraction"
+version = "0.1.0"
+description = "RCN ingestion worker - Property Market Analytics Platform"
+authors = [
+    {name = "Oleg Yaroshevich", email = "olafieros@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.14,<4.0"
+dependencies = [
+    "taskiq (>=0.11.20,<0.12.0)",
+    "taskiq-redis (>=1.1.2,<2.0.0)",
+    "taskiq-fastapi (>=0.3.6,<0.4.0)",
+    "fastapi (>=0.141.1,<0.142.0)",
+    "uvicorn[standard] (>=0.52.1,<0.53.0)",
+    "pydantic-settings (>=2.15.0,<3.0.0)",
+    "sqlalchemy[asyncio] (>=2.0.52,<3.0.0)",
+    "asyncpg (>=0.31.0,<0.32.0)",
+    "greenlet (>=3.5.5,<4.0.0)",
+    "alembic (>=1.19.1,<2.0.0)",
+    "geoalchemy2 (>=0.15.2,<1.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "lxml (>=6.0.0,<7.0.0)",
+    "tenacity (>=9.1.4,<10.0.0)",
+    "boto3 (>=1.43.0,<2.0.0)",
+    "typer (>=0.12.5,<1.0.0)"
+]
+
+# [project.scripts]
+# rcn-extraction = "extraction.entrypoints.cli:app"
+# uncomment at step 10, when cli.py exists; before that poetry install breaks
+
+[tool.poetry]
+packages = [{ include = "extraction", from = "src" }]
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-asyncio (>=1.4.0,<2.0.0)",
+    "testcontainers[postgres,minio] (>=4.15.0,<5.0.0)",
+    "respx (>=0.22.0,<0.23.0)",
+    "factory-boy (>=3.3.3,<4.0.0)",
+    "faker (>=40.36.0,<41.0.0)",
+    "ruff (>=0.16.2,<0.17.0)",
+    "pre-commit (>=4.6.2,<5.0.0)"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+exclude = ["migrations/versions", ".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # Pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # bugbear
+    "ASYNC",    # blocking calls inside async
+    "S",        # bandit
+    "DTZ",      # naive datetime
+    "SIM",
+    "TID",      # tidy imports
+    "RUF",
+]
+ignore = [
+    "E501",     # line length is handled by the formatter
+    "B008",     # Depends() in signature is a FastAPI/TaskIQ idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S106"]
+"migrations/*" = ["I", "N", "E402", "E501"]
+"scripts/*" = ["S", "T201"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"extraction.entrypoints".msg = "core and pipeline must not import entrypoints"
+
+[tool.ruff.lint.isort]
+known-first-party = ["extraction"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = ["integration: requires Docker (testcontainers)"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
