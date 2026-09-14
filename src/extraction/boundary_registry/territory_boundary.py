@@ -3,8 +3,13 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from extraction.prg.dbf import read_dbf
-from extraction.prg.districts import DISTRICT_GMINAS, STRIP_NUMBERS, clean_unit_name, strip_number
+from extraction.boundary_registry.dbf import read_dbf
+from extraction.boundary_registry.districts import (
+    DISTRICT_GMINAS,
+    STRIP_NUMBERS,
+    clean_unit_name,
+    strip_number,
+)
 
 LAYER_VOIVODESHIP = "A01_Granice_wojewodztw"
 LAYER_POWIAT = "A02_Granice_powiatow"
@@ -38,11 +43,11 @@ def unit_gmina(unit: str) -> str:
     return unit[:6] + ("3" if kind in "45" else kind)
 
 
-def _read_layer(prg_dir: Path, layer: str) -> list[tuple[str, str]]:
-    return [(r[COL_CODE], r[COL_NAME]) for r in read_dbf(prg_dir / f"{layer}.dbf")]
+def _read_layer(folder: Path, layer: str) -> list[tuple[str, str]]:
+    return [(r[COL_CODE], r[COL_NAME]) for r in read_dbf(folder / f"{layer}.dbf")]
 
 
-def build_rows(prg_dir: Path, districts: set[str] = DISTRICT_GMINAS) -> list[dict[str, str | None]]:
+def build_rows(folder: Path, districts: set[str] = DISTRICT_GMINAS) -> list[dict[str, str | None]]:
     """Build every prefix_map row from the PRG layers.
 
     Levels are built top-down: each row is a copy of its parent plus its own columns.
@@ -50,19 +55,19 @@ def build_rows(prg_dir: Path, districts: set[str] = DISTRICT_GMINAS) -> list[dic
 
     rows: dict[str, dict[str, str | None]] = {}
 
-    for code, name in _read_layer(prg_dir, LAYER_VOIVODESHIP):
+    for code, name in _read_layer(folder, LAYER_VOIVODESHIP):
         rows[code] = EMPTY_ROW | {"voivodeship_teryt": code, "voivodeship_name": name}
-    for code, name in _read_layer(prg_dir, LAYER_POWIAT):
+    for code, name in _read_layer(folder, LAYER_POWIAT):
         rows[code] = rows[code[:2]] | {"powiat_teryt": code, "powiat_name": name}
-    for code, name in _read_layer(prg_dir, LAYER_GMINA):
+    for code, name in _read_layer(folder, LAYER_GMINA):
         rows[code] = rows[code[:4]] | {"gmina_teryt": code, "gmina_name": name}
 
-    for code, name in _read_layer(prg_dir, LAYER_UNIT):
+    for code, name in _read_layer(folder, LAYER_UNIT):
         gmina = rows[unit_gmina(code)]
         district = clean_unit_name(name, gmina["gmina_name"]) if code[7] in "89" else None
         rows[code] = gmina | {"district_name": district}
 
-    for code, name in _read_layer(prg_dir, LAYER_OBREB):
+    for code, name in _read_layer(folder, LAYER_OBREB):
         unit = rows[code[:8]]
         if unit["gmina_teryt"] in districts:
             district = strip_number(name) if unit["gmina_teryt"] in STRIP_NUMBERS else name
@@ -71,15 +76,15 @@ def build_rows(prg_dir: Path, districts: set[str] = DISTRICT_GMINAS) -> list[dic
     return [{"prefix_code": code, **row} for code, row in rows.items()]
 
 
-async def load(
-    session: AsyncSession, prg_dir: Path, districts: set[str] = DISTRICT_GMINAS
+async def load_dbf(
+    session: AsyncSession, folder: Path, districts: set[str] = DISTRICT_GMINAS
 ) -> list[dict[str, str | None]]:
     """Replace prefix_map with the registry built from PRG and return the inserted rows.
 
     The caller commits the transaction.
     """
 
-    rows = build_rows(prg_dir, districts)
+    rows = build_rows(folder, districts)
     await session.execute(text("TRUNCATE prefix_map"))
     await session.execute(
         text(

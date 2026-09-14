@@ -4,11 +4,11 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from extraction.boundary_registry import territory_boundary
 from extraction.db import SessionFactory
-from extraction.prg import build
 
 URL = "https://opendata.geoportal.gov.pl/prg/granice/00_jednostki_administracyjne.zip"
-PRG_DIR = Path(__file__).resolve().parents[1] / "data" / "boundaries" / "prg"
+PRG_DIR = Path(__file__).resolve().parents[1] / "data" / "boundaries" / "National Boundary Registry"
 
 
 def download() -> Path:
@@ -29,10 +29,10 @@ def download() -> Path:
 
 
 async def load(folder: Path) -> None:
-    """Load the registry from a PRG folder into the database in one transaction."""
+    """Load the registry from a National Boundary Registry folder into the database in one transaction."""
 
     async with SessionFactory.begin() as session:
-        await build.load(session, folder)
+        await territory_boundary.load_dbf(session, folder)
 
 
 if __name__ == "__main__":
