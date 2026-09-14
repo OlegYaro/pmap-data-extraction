@@ -15,11 +15,35 @@ services:
   migrate:
     build: .
     command: alembic upgrade head
-    environment:
-      DB_URL: postgresql+asyncpg://extraction:extraction@db:5432/extraction
+    env_file: .env
     depends_on:
       db:
         condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  worker:
+    build: .
+    command: taskiq worker taskiq:broker
+    env_file: .env
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  scheduler:
+    build: .
+    command: taskiq scheduler taskiq:scheduler
+    env_file: .env
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
 
 volumes:
   pgdata:
