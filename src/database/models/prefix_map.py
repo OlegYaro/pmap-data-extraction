@@ -1,7 +1,7 @@
 from sqlalchemy import Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from extraction.db import Base
+from database.models.base_class import Base
 
 
 class PrefixMap(Base):
