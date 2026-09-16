@@ -29,9 +29,18 @@ services:
       timeout: 2s
       retries: 10
 
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
   worker:
     build: .
-    command: taskiq worker taskiq:broker
+    command: taskiq worker jobs.broker:broker jobs.tasks
     env_file: .env
     depends_on:
       redis: { condition: service_healthy }
@@ -39,7 +48,7 @@ services:
 
   scheduler:
     build: .
-    command: taskiq scheduler taskiq:scheduler
+    command: taskiq scheduler jobs.broker:scheduler jobs.tasks
     env_file: .env
     depends_on:
       redis: { condition: service_healthy }

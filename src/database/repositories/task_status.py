@@ -1,4 +1,4 @@
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.task_status import TaskStatus, TaskStatusEnum, TaskTriggerEnum
@@ -11,7 +11,7 @@ class TaskStatusRepository:
 
         task = TaskStatus(trigger=trigger)
         session.add(task)
-        await session.flush
+        await session.flush()
 
         return task
 
@@ -63,6 +63,38 @@ class TaskStatusRepository:
             .where(TaskStatus.id == task_id)
             .values(failed_stage=failed_stage)
             .values(finished_at=text("NOW()"))
+            .returning(TaskStatus)
+        )
+
+        result = await session.execute(stmt)
+        return result.scalar_one()
+
+    @staticmethod
+    async def mark_failed(session: AsyncSession, task_id: int, failed_stage: str) -> TaskStatus:
+        """Mark a task as failed with the stage it failed at and return it."""
+
+        stmt = (
+            update(TaskStatus)
+            .where(TaskStatus.id == task_id)
+            .values(
+                status=TaskStatusEnum.failed,
+                failed_stage=failed_stage,
+                finished_at=func.now(),
+            )
+            .returning(TaskStatus)
+        )
+
+        result = await session.execute(stmt)
+        return result.scalar_one()
+
+    @staticmethod
+    async def mark_staged(session: AsyncSession, task_id: int) -> TaskStatus:
+        """Mark a task as successfully staged and return it."""
+
+        stmt = (
+            update(TaskStatus)
+            .where(TaskStatus.id == task_id)
+            .values(status=TaskStatusEnum.staged, finished_at=func.now())
             .returning(TaskStatus)
         )
 
