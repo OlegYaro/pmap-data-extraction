@@ -53,3 +53,6 @@ test: test-db
 
 test-one: test-db
 	DB_URL=$(TEST_DB_URL) poetry run pytest -k "$(k)" -vv
+
+load:
+	poetry run python scripts/load_prg.py
