@@ -58,7 +58,7 @@ class TerritoryBoundary:
         Fails before touching the database if any layer is missing. The caller commits.
         """
         rows = cls._rows_from_dbf(folder, districts)
-        await PrefixMapRepository.replace_all(session, rows)
+        await PrefixMapRepository.rewrite_boundaris(session, rows)
         return rows
 
     @classmethod
