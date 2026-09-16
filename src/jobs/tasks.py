@@ -7,10 +7,11 @@ from jobs.broker import broker
 
 
 @broker.task(task_name="start_pipeline")
-async def start_pipeline_manual(teryt: str | None, context: Context = TaskiqDepends()):
+async def start_pipeline_manual(
+    teryt: str | None, task_id: int | None = None, context: Context = TaskiqDepends()
+):
     """Start the pipeline (hole service) for a manual call"""
-
-    return await pipeline.start_pipeline(teryt, TaskTriggerEnum.manual)
+    return await pipeline.start_pipeline(teryt, TaskTriggerEnum.manual, task_id=task_id)
 
 
 @broker.task(schedule=[{"cron": "0 3 * * *"}])
