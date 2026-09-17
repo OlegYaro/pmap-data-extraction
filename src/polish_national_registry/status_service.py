@@ -5,11 +5,11 @@ from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.task_status import TaskStatusEnum, TaskTriggerEnum
-from database.repositories.task_status import TaskStatusRepository
+from database.repositories.task_status import DataExtractionTaskRepository
 
 
-class TaskStatusDTO(BaseModel):
-    """DTO for TaskStatus model."""
+class DataExtractionTaskDTO(BaseModel):
+    """DTO for DataExtractionTask model."""
 
     model_config = ConfigDict(from_attributes=True, frozen=True)
 
@@ -34,50 +34,45 @@ class TaskNotFoundError(TaskStatusServiceError):
         super().__init__(f"task_status id={task_id} not found")
 
 
-class TaskStatusService:
+class ExtractionTaskStateService:
     """Service for managing task statuses."""
 
     @staticmethod
-    async def create_new_task(session: AsyncSession, trigger: TaskTriggerEnum) -> TaskStatusDTO:
+    async def initialize(session: AsyncSession, trigger: TaskTriggerEnum) -> DataExtractionTaskDTO:
         """Create a new task with the given trigger and return its DTO."""
 
-        task = await TaskStatusRepository.add_task(session, trigger)
+        task = await DataExtractionTaskRepository.create(session, trigger)
         await session.flush()
         await session.refresh(task)
-        return TaskStatusDTO.model_validate(task)
+        return DataExtractionTaskDTO.model_validate(task)
 
     @staticmethod
-    async def mark_download(session: AsyncSession, task_id: int) -> TaskStatusDTO:
-        """Mark a task as downloading."""
-        try:
-            task = await TaskStatusRepository.change_status(
-                session, task_id, TaskStatusEnum.download
-            )
-        except NoResultFound as exc:
-            raise TaskNotFoundError(task_id) from exc
-        return TaskStatusDTO.model_validate(task)
-
-    @staticmethod
-    async def mark_staged(session: AsyncSession, task_id: int) -> TaskStatusDTO:
-        """Mark a task as staged."""
-        try:
-            task = await TaskStatusRepository.mark_staged(session, task_id)
-        except NoResultFound as exc:
-            raise TaskNotFoundError(task_id) from exc
-        return TaskStatusDTO.model_validate(task)
-
-    @staticmethod
-    async def mark_failed(session: AsyncSession, task_id: int, failed_stage: str) -> TaskStatusDTO:
-        """Mark a task as failed."""
-        try:
-            task = await TaskStatusRepository.mark_failed(session, task_id, failed_stage[:32])
-        except NoResultFound as exc:
-            raise TaskNotFoundError(task_id) from exc
-        return TaskStatusDTO.model_validate(task)
-
-    @staticmethod
-    async def get_task(session: AsyncSession, task_id: int) -> TaskStatusDTO:
-        task = await TaskStatusRepository.get_task(session, task_id)
+    async def get(session: AsyncSession, task_id: int) -> DataExtractionTaskDTO:
+        task = await DataExtractionTaskRepository.get_by_id(session, task_id)
         if task is None:
             raise TaskNotFoundError(task_id)
-        return TaskStatusDTO.model_validate(task)
+        return DataExtractionTaskDTO.model_validate(task)
+
+    @staticmethod
+    async def enter_stage(
+        session: AsyncSession,
+        task_id: int,
+        status: TaskStatusEnum,
+        stage: TaskStatusEnum | None = None,
+    ) -> DataExtractionTaskDTO:
+        """Mark a task as downloading."""
+        try:
+            task = await DataExtractionTaskRepository.update_status(
+                session, task_id=task_id, status=status
+            )
+            if status is TaskStatusEnum.failed:
+                task = await DataExtractionTaskRepository.update_failure(
+                    session, task_id=task_id, failed_stage=stage
+                )
+
+            dto = DataExtractionTaskDTO.model_validate(task)
+            await session.commit()
+        except NoResultFound as exc:
+            await session.rollback()
+            raise TaskNotFoundError(task_id) from exc
+        return dto

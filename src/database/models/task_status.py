@@ -23,7 +23,7 @@ class TaskTriggerEnum(enum.StrEnum):
     schedule = "schedule"
 
 
-class TaskStatus(Base):
+class DataExtractionTask(Base):
     """SQLAlchemy model for the task_status table."""
 
     __tablename__ = "task_status"

@@ -5,15 +5,13 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 
 from database.models.task_status import TaskStatusEnum, TaskTriggerEnum
-from database.session import DbSession, SessionFactory
+from database.session import DbSession
 from jobs.broker import broker
 from jobs.tasks import start_pipeline_manual
-from polish_national_registry.status_service import TaskNotFoundError, TaskStatusService
+from polish_national_registry.status_service import ExtractionTaskStateService, TaskNotFoundError
 
 
 class TaskStatusResponse(BaseModel):
-    """Состояние прогона — всё, что сервис отдаёт наружу."""
-
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -35,11 +33,10 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/tasks", status_code=status.HTTP_202_ACCEPTED)
-async def start_pipeline(teryt: str | None) -> TaskStatusResponse:
+async def start_pipeline(db: DbSession, teryt: str | None) -> TaskStatusResponse:
     """Manual start of the pipeline for a given powiat (or all powiats if not specified)."""
 
-    async with SessionFactory.begin() as session:
-        task = await TaskStatusService.create_new_task(session, TaskTriggerEnum.manual)
+    task = await ExtractionTaskStateService.initialize(db, TaskTriggerEnum.manual)
 
     await start_pipeline_manual.kiq(teryt=teryt, task_id=task.id)
     return TaskStatusResponse.model_validate(task)
@@ -50,7 +47,7 @@ async def get_task_status(db: DbSession, task_id: int) -> TaskStatusResponse:
     """Status of a pipeline run by its id."""
 
     try:
-        task = await TaskStatusService.get_task(db, task_id)
+        task = await ExtractionTaskStateService.get(db, task_id)
     except TaskNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

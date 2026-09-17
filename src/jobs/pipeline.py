@@ -1,33 +1,34 @@
-from database.models.task_status import TaskTriggerEnum
-from database.session import SessionFactory
-from polish_national_registry.status_service import TaskStatusService
+from sqlalchemy.ext.asyncio import AsyncSession
 
-STAGE_DOWNLOAD = "download"
+from database.models.task_status import TaskStatusEnum, TaskTriggerEnum
+from polish_national_registry.status_service import ExtractionTaskStateService
 
 
 async def start_pipeline(
+    session: AsyncSession,
     teryt: str | None,
     trigger: TaskTriggerEnum,
     task_id: int | None = None,
 ):
     """Start the pipeline of hole service with a new task and manage its status."""
 
-    async with SessionFactory.begin() as session:
-        if task_id is None:
-            task_id = (await TaskStatusService.create_new_task(session, trigger)).id
+    if task_id is None:
+        task_id = (await ExtractionTaskStateService.initialize(session, trigger)).id
 
     try:
+        stage = TaskStatusEnum.download
         # result = await download() example of a download function that may raise an exception
-        async with SessionFactory.begin() as session:
-            await TaskStatusService.mark_download(session, task_id)
-        stage = STAGE_DOWNLOAD
+        await ExtractionTaskStateService.enter_stage(
+            session, task_id=task_id, status=TaskStatusEnum.download, stage=stage
+        )
 
     except Exception:
-        async with SessionFactory.begin() as session:
-            await TaskStatusService.mark_failed(session, task_id, stage)
-        raise
+        await ExtractionTaskStateService.enter_stage(
+            session, task_id=task_id, status=TaskStatusEnum.failed, stage=stage
+        )
 
-    async with SessionFactory.begin() as session:
-        await TaskStatusService.mark_staged(session, task_id)
+    await ExtractionTaskStateService.enter_stage(
+        session, task_id=task_id, status=TaskStatusEnum.staged, stage=None
+    )
 
     return None  # result
