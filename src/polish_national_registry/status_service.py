@@ -55,21 +55,31 @@ class ExtractionTaskStateService:
 
     @staticmethod
     async def enter_stage(
-        session: AsyncSession,
-        task_id: int,
-        status: TaskStatusEnum,
-        stage: TaskStatusEnum | None = None,
+        session: AsyncSession, task_id: int, status: TaskStatusEnum
     ) -> DataExtractionTaskDTO:
-        """Mark a task as downloading."""
+        """Change the status of a task to the given status."""
         try:
             task = await DataExtractionTaskRepository.update_status(
                 session, task_id=task_id, status=status
             )
-            if status is TaskStatusEnum.failed:
-                task = await DataExtractionTaskRepository.update_failure(
-                    session, task_id=task_id, failed_stage=stage
-                )
+            dto = DataExtractionTaskDTO.model_validate(task)
+            await session.commit()
+        except NoResultFound as exc:
+            await session.rollback()
+            raise TaskNotFoundError(task_id) from exc
+        return dto
 
+    @staticmethod
+    async def fail(
+        session: AsyncSession, task_id: int, stage: TaskStatusEnum
+    ) -> DataExtractionTaskDTO:
+        """Close a task as failed at the stage where it failed."""
+
+        await session.rollback()
+        try:
+            task = await DataExtractionTaskRepository.update_failure(
+                session, task_id=task_id, failed_stage=stage
+            )
             dto = DataExtractionTaskDTO.model_validate(task)
             await session.commit()
         except NoResultFound as exc:
