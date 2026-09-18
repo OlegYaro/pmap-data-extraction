@@ -36,6 +36,7 @@ packages = [
     { include = "database", from = "src" },
     { include = "polish_national_registry", from = "src" },
     { include = "jobs", from = "src" },
+    { include = "api", from = "src" },
 ]
 
 [dependency-groups]
