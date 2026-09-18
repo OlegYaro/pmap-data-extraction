@@ -54,7 +54,7 @@ class ExtractionTaskStateService:
         return DataExtractionTaskDTO.model_validate(task)
 
     @staticmethod
-    async def enter_stage(
+    async def change_task_status(
         session: AsyncSession, task_id: int, status: TaskStatusEnum
     ) -> DataExtractionTaskDTO:
         """Change the status of a task to the given status."""
@@ -70,15 +70,13 @@ class ExtractionTaskStateService:
         return dto
 
     @staticmethod
-    async def fail(
-        session: AsyncSession, task_id: int, stage: TaskStatusEnum
-    ) -> DataExtractionTaskDTO:
+    async def fail(session: AsyncSession, task_id: int) -> DataExtractionTaskDTO:
         """Close a task as failed at the stage where it failed."""
 
-        await session.rollback()
         try:
+            failed_stage = (await DataExtractionTaskRepository.get_by_id(session, task_id)).status
             task = await DataExtractionTaskRepository.update_failure(
-                session, task_id=task_id, failed_stage=stage
+                session, task_id=task_id, failed_stage=failed_stage
             )
             dto = DataExtractionTaskDTO.model_validate(task)
             await session.commit()

@@ -16,14 +16,16 @@ async def start_pipeline(
         task_id = (await ExtractionTaskStateService.initialize(session, trigger)).id
 
     try:
-        stage = TaskStatusEnum.download
         # result = await download() example of a download function that may raise an exception
-        await ExtractionTaskStateService.enter_stage(session, task_id, TaskStatusEnum.download)
+        await ExtractionTaskStateService.change_task_status(
+            session, task_id, TaskStatusEnum.download
+        )
 
-        await ExtractionTaskStateService.enter_stage(
+        await ExtractionTaskStateService.change_task_status(
             session, task_id=task_id, status=TaskStatusEnum.staged
         )
     except Exception:
-        await ExtractionTaskStateService.fail(session, task_id, stage)
+        await session.rollback()
+        await ExtractionTaskStateService.fail(session, task_id)
 
     return None  # result

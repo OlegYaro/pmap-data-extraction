@@ -31,8 +31,7 @@ class DataExtractionTaskRepository:
         stmt = (
             update(DataExtractionTask)
             .where(DataExtractionTask.id == task_id)
-            .values(failed_stage=failed_stage)
-            .values(failed_stage=failed_stage, finished_at=func.now())
+            .values(status=TaskStatusEnum.failed, failed_stage=failed_stage, finished_at=func.now())
             .returning(DataExtractionTask)
         )
 

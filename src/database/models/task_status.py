@@ -36,4 +36,4 @@ class DataExtractionTask(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trigger: Mapped[str] = mapped_column(Enum(TaskTriggerEnum))
-    failed_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    failed_stage: Mapped[str | None] = mapped_column(String(255), nullable=True)
