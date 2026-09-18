@@ -5,6 +5,7 @@
 -include .env
 export
 
+LOCAL_DB_URL = postgresql+asyncpg://extraction:extraction@localhost:5432/extraction
 TEST_DB_NAME ?= extraction_test
 TEST_DB_URL := $(dir $(DB_URL))$(TEST_DB_NAME)
 
@@ -55,4 +56,4 @@ test-one: test-db
 	DB_URL=$(TEST_DB_URL) poetry run pytest -k "$(k)" -vv
 
 load:
-	poetry run python scripts/load_prg.py
+	DB_URL=$(LOCAL_DB_URL) poetry run python scripts/load_prg.py

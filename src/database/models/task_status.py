@@ -11,7 +11,7 @@ class TaskStatusEnum(enum.StrEnum):
     """Enum class for status."""
 
     queued = "queued"
-    download = "download"
+    downloading = "downloading"
     staged = "staged"
     failed = "failed"
 

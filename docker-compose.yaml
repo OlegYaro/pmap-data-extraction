@@ -37,6 +37,9 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes: ["./data:/app/data"]
+    environment:
+      DOWNLOAD_DIR: /app/data/rcn
 
   worker:
     build: .
@@ -45,6 +48,9 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes: ["./data:/app/data"]
+    environment:
+      DOWNLOAD_DIR: /app/data/rcn
 
   scheduler:
     build: .
