@@ -9,7 +9,8 @@ from alembic import context
 
 from core.config import settings
 from database.models.base_class import Base
-import database.models.prefix_map  # noqa: F401
+import database.models.prefix_map
+import database.models.task_status  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DB_URL)

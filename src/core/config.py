@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     DB_URL: str
     DB_POOL_SIZE: int = 5
+    REDIS_URL: str
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

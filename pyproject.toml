@@ -31,7 +31,12 @@ dependencies = [
 # uncomment at step 10, when cli.py exists; before that poetry install breaks
 
 [tool.poetry]
-packages = [{ include = "extraction", from = "src" }]
+packages = [
+    { include = "core", from = "src" },
+    { include = "database", from = "src" },
+    { include = "polish_national_registry", from = "src" },
+    { include = "jobs", from = "src" },
+]
 
 [dependency-groups]
 dev = [
