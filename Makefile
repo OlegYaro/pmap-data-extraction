@@ -25,7 +25,7 @@ migrate:
 	docker compose up migrate
 
 create_migration:
-	poetry run alembic revision --autogenerate -m "$(name)"
+	DB_URL=$(LOCAL_DB_URL) poetry run alembic revision --autogenerate -m "$(name)"
 
 downgrade:
 	poetry run alembic downgrade -1

@@ -43,7 +43,7 @@ services:
 
   worker:
     build: .
-    command: taskiq worker jobs.broker:broker jobs.tasks
+    command: taskiq worker jobs.broker:broker jobs.tasks --workers 1 --max-async-tasks 4
     env_file: .env
     depends_on:
       redis: { condition: service_healthy }
