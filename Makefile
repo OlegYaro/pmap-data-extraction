@@ -7,7 +7,7 @@ export
 
 LOCAL_DB_URL = postgresql+asyncpg://extraction:extraction@localhost:5432/extraction
 TEST_DB_NAME ?= extraction_test
-TEST_DB_URL := $(dir $(DB_URL))$(TEST_DB_NAME)
+TEST_DB_URL := $(dir $(LOCAL_DB_URL))$(TEST_DB_NAME)
 
 up:
 	docker compose up -d
