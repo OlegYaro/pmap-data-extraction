@@ -102,6 +102,8 @@ class DataDownloadService:
             )
             raise
 
-        status = TaskStatusEnum.staged if path else TaskStatusEnum.not_published
-        await ExtractionTaskStateService.change_task_status(session, task_id, status)
+        if path is None:
+            await ExtractionTaskStateService.change_task_status(
+                session, task_id, TaskStatusEnum.not_published
+            )
         return path

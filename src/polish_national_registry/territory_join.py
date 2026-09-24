@@ -112,10 +112,12 @@ class TerritoryJoinService:
             session, task_id, TaskStatusEnum.joining
         )
         try:
-            return await TerritoryJoinService.join_one(session, territory_code, archive)
+            result = await TerritoryJoinService.join_one(session, territory_code, archive)
         except Exception:
             await session.rollback()
             await ExtractionTaskStateService.fail(
                 session, task_id, error_trace=traceback.format_exc()
             )
             raise
+        await ExtractionTaskStateService.change_task_status(session, task_id, TaskStatusEnum.staged)
+        return result
