@@ -7,6 +7,7 @@ from core import settings
 from database.repositories.prefix_map import PrefixMapRepository
 from polish_national_registry.data_download import DataDownloadService
 from polish_national_registry.status_service import ExtractionTaskStateService
+from polish_national_registry.territory_join import TerritoryJoinService
 
 log = logging.getLogger(__name__)
 
@@ -28,5 +29,8 @@ async def run_territory(session: AsyncSession, task_id: int) -> Path | None:
     path = await DataDownloadService.start_downloading(
         session, task_id, task.territory_code, target_dir
     )
-    # next stages: cleaning, joining - the same way, each service owns its statuses
-    return path
+    if path is None:
+        return None
+    joined = await TerritoryJoinService.start_joining(session, task_id, task.territory_code, path)
+    # next stage is cleaning takes `joined`
+    return joined
