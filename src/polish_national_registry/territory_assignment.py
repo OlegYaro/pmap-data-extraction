@@ -18,11 +18,11 @@ from polish_national_registry.status_service import ExtractionTaskStateService, 
 log = logging.getLogger(__name__)
 
 
-class JoinError(Exception):
+class TerritoryAssignmentError(Exception):
     """The file could not be joined with the boundaries."""
 
 
-class JoinedTransactionDTO(BaseModel):
+class AssignedTransactionDTO(BaseModel):
     """All columns of one transaction row plus its territory."""
 
     model_config = ConfigDict(frozen=True)
@@ -39,13 +39,13 @@ class JoinedTransactionDTO(BaseModel):
     district_name: str | None = None
 
 
-def resolve(identifier: str | None, lookup: dict[str, PrefixMap]) -> PrefixMap | None:
+def find_area(identifier: str | None, areas: dict[str, PrefixMap]) -> PrefixMap | None:
     """Find the territory of a transaction by its cadastral identifier."""
     if not identifier:
         return None
     unit, _, rest = identifier.partition(".")
     obreb = rest.partition(".")[0]
-    return lookup.get(f"{unit}.{obreb}") or lookup.get(unit)
+    return areas.get(f"{unit}.{obreb}") or areas.get(unit)
 
 
 def city_of(territory: PrefixMap) -> str | None:
@@ -55,7 +55,7 @@ def city_of(territory: PrefixMap) -> str | None:
     return territory.gmina_name if kind and kind in "1489" else None
 
 
-class TerritoryJoinService:
+class TerritoryAssignmentService:
     @staticmethod
     def read_transactions(archive: Path) -> list[dict[str, Any]]:
         """Every row of the layer that has the identifier column, as column -> value dicts."""
@@ -70,19 +70,19 @@ class TerritoryJoinService:
                     if "lok_id_lokalu" in columns:
                         rows = conn.execute(f'SELECT * FROM "{table}"')  # noqa: S608
                         return [dict(row) for row in rows]
-        raise JoinError(f"{archive.name}: no layer with column {'lok_id_lokalu'}")
+        raise TerritoryAssignmentError(f"{archive.name}: no layer with column {'lok_id_lokalu'}")
 
     @staticmethod
-    async def join_one(
+    async def assign_one(
         session: AsyncSession, territory_code: str, archive: Path
-    ) -> list[JoinedTransactionDTO]:
+    ) -> list[AssignedTransactionDTO]:
         """Read one powiat file and attach the territory to every transaction."""
-        lookup = await PrefixMapRepository.load_powiat_index(session, territory_code)
-        rows = await asyncio.to_thread(TerritoryJoinService.read_transactions, archive)
+        territories = await PrefixMapRepository.load_powiat_index(session, territory_code)
+        rows = await asyncio.to_thread(TerritoryAssignmentService.read_transactions, archive)
 
         result = []
         for row in rows:
-            territory = resolve(row.get("lok_id_lokalu"), lookup)
+            territory = find_area(row.get("lok_id_lokalu"), territories)
             fields = (
                 {
                     "prefix_code": territory.prefix_code,
@@ -98,21 +98,21 @@ class TerritoryJoinService:
                 if territory
                 else {}
             )
-            result.append(JoinedTransactionDTO(transaction=row, **fields))
+            result.append(AssignedTransactionDTO(transaction=row, **fields))
 
-        log.info("join_ok territory_code=%s total=%d", territory_code, len(result))
+        log.info("assignment_ok territory_code=%s total=%d", territory_code, len(result))
         return result
 
     @staticmethod
-    async def start_joining(
+    async def start_assigning(
         session: AsyncSession, task_id: int, territory_code: str, archive: Path
-    ) -> list[JoinedTransactionDTO]:
+    ) -> list[AssignedTransactionDTO]:
         """Join one powiat and keep its task status up to joining."""
         await ExtractionTaskStateService.change_task_status(
-            session, task_id, TaskStatusEnum.joining
+            session, task_id, TaskStatusEnum.assigning
         )
         try:
-            result = await TerritoryJoinService.join_one(session, territory_code, archive)
+            result = await TerritoryAssignmentService.assign_one(session, territory_code, archive)
         except Exception:
             await session.rollback()
             await ExtractionTaskStateService.fail(

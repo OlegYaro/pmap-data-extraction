@@ -32,7 +32,7 @@ class RunSummaryDTO(BaseModel):
     run_id: uuid.UUID
     total: int
     downloaded: int
-    joined: int
+    assigned: int
     not_published: int
     failed: int
     in_progress: int
@@ -117,8 +117,8 @@ class ExtractionTaskStateService:
             for task in await DataExtractionTaskRepository.list_by_run(session, run_id)
         ]
         statuses = [task.status for task in tasks]
-        downloaded = statuses.count(TaskStatusEnum.joining)
-        joined = statuses.count(TaskStatusEnum.staged)
+        downloaded = statuses.count(TaskStatusEnum.assigning)
+        assigned = statuses.count(TaskStatusEnum.staged)
         not_published = statuses.count(TaskStatusEnum.not_published)
         failed_tasks = [task for task in tasks if task.status == TaskStatusEnum.failed]
 
@@ -126,9 +126,9 @@ class ExtractionTaskStateService:
             run_id=run_id,
             total=len(tasks),
             downloaded=downloaded,
-            joined=joined,
+            assigned=assigned,
             not_published=not_published,
             failed=len(failed_tasks),
-            in_progress=len(tasks) - downloaded - joined - not_published - len(failed_tasks),
+            in_progress=len(tasks) - downloaded - assigned - not_published - len(failed_tasks),
             failed_tasks=failed_tasks,
         )
