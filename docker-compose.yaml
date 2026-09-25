@@ -37,14 +37,20 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes: ["./data:/app/data"]
+    environment:
+      DOWNLOAD_DIR: /app/data/rcn
 
   worker:
     build: .
-    command: taskiq worker jobs.broker:broker jobs.tasks
+    command: taskiq worker jobs.broker:broker jobs.tasks --workers 1 --max-async-tasks 4
     env_file: .env
     depends_on:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes: ["./data:/app/data"]
+    environment:
+      DOWNLOAD_DIR: /app/data/rcn
 
   scheduler:
     build: .

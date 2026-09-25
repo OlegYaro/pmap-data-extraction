@@ -19,11 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 ENUM_NAME = "taskstatusenum"
-NEW_VALUES = ("queued","download", "staged", "failed")
+NEW_VALUES = ("queued","downloading", "staged", "failed")
 
 
 def upgrade() -> None:
-    # ADD VALUE безопаснее выполнять вне транзакции миграции
     with op.get_context().autocommit_block():
         for value in NEW_VALUES:
             op.execute(f"ALTER TYPE {ENUM_NAME} ADD VALUE IF NOT EXISTS '{value}'")

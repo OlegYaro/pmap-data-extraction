@@ -24,3 +24,14 @@ class PrefixMapRepository:
         await session.execute(delete(PrefixMap))
         if rows:
             await session.execute(insert(PrefixMap), rows)
+
+    @staticmethod
+    async def list_powiats(session: AsyncSession) -> list[str]:
+        """Get a list of all powiat_teryt values in the prefix_map table, ordered and distinct."""
+        result = await session.scalars(
+            select(PrefixMap.powiat_teryt)
+            .where(PrefixMap.powiat_teryt.is_not(None))
+            .distinct()
+            .order_by(PrefixMap.powiat_teryt)
+        )
+        return list(result)

@@ -5,8 +5,9 @@
 -include .env
 export
 
+LOCAL_DB_URL = postgresql+asyncpg://extraction:extraction@localhost:5432/extraction
 TEST_DB_NAME ?= extraction_test
-TEST_DB_URL := $(dir $(DB_URL))$(TEST_DB_NAME)
+TEST_DB_URL := $(dir $(LOCAL_DB_URL))$(TEST_DB_NAME)
 
 up:
 	docker compose up -d
@@ -24,7 +25,7 @@ migrate:
 	docker compose up migrate
 
 create_migration:
-	poetry run alembic revision --autogenerate -m "$(name)"
+	DB_URL=$(LOCAL_DB_URL) poetry run alembic revision --autogenerate -m "$(name)"
 
 downgrade:
 	poetry run alembic downgrade -1
@@ -55,4 +56,4 @@ test-one: test-db
 	DB_URL=$(TEST_DB_URL) poetry run pytest -k "$(k)" -vv
 
 load:
-	poetry run python scripts/load_prg.py
+	DB_URL=$(LOCAL_DB_URL) poetry run python scripts/load_prg.py
