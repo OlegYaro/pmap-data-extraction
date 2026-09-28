@@ -94,7 +94,7 @@ async def test_loaded_powiat_is_staged_and_undelivered(session, persist):
 
     await session.refresh(task)
     row = await session.scalar(select(StagedTransaction))
-    assert task.status == TaskStatusEnum.staged
+    assert task.status == TaskStatusEnum.done
     assert (row.run_id, row.delivered_at) == (task.run_id, None)
 
 

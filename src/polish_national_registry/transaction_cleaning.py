@@ -75,7 +75,7 @@ def exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) ->
     if numerator.strip() != denominator.strip():
         return "fractional_share"
 
-    if premises_in_deal > 1 or (deal_price and deal_price != price):
+    if premises_in_deal > 1 or (price and deal_price and deal_price != price):
         return "package_deal"
 
     if source.get("tran_rodzaj_trans") != "wolnyRynek":
