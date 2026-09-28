@@ -32,6 +32,8 @@ class RunStatusResponse(BaseModel):
     total: int
     downloaded: int
     assigned: int
+    cleaned: int
+    loaded: int
     not_published: int
     failed: int
     in_progress: int

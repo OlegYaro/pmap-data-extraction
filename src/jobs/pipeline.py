@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +7,8 @@ from database.repositories.prefix_map import PrefixMapRepository
 from polish_national_registry.data_download import DataDownloadService
 from polish_national_registry.status_service import ExtractionTaskStateService
 from polish_national_registry.territory_assignment import TerritoryAssignmentService
+from polish_national_registry.transaction_cleaning import TransactionCleaningService
+from polish_national_registry.transaction_load import TransactionLoadService
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ async def resolve_territories(session: AsyncSession, territory_code: str | None)
     return await PrefixMapRepository.list_powiats(session=session)
 
 
-async def run_territory(session: AsyncSession, task_id: int) -> Path | None:
+async def run_territory(session: AsyncSession, task_id: int) -> None:
     """Start the pipeline for all service for one powiat with a new task."""
     task = await ExtractionTaskStateService.get(session, task_id)
     target_dir = settings.DOWNLOAD_DIR / task.started_at.strftime("%Y-%m-%d")
@@ -30,9 +31,13 @@ async def run_territory(session: AsyncSession, task_id: int) -> Path | None:
         session, task_id, task.territory_code, target_dir
     )
     if path is None:
-        return None
+        return
     assigned = await TerritoryAssignmentService.start_assigning(
         session, task_id, task.territory_code, path
     )
-    # next stage is cleaning takes `joined`
-    return assigned
+    records = await TransactionCleaningService.start_cleaning(
+        session, task_id, task.territory_code, assigned
+    )
+    await TransactionLoadService.start_loading(
+        session, task_id, task.territory_code, task.run_id, records
+    )

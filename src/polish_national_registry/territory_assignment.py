@@ -120,5 +120,4 @@ class TerritoryAssignmentService:
                 session, task_id, error_trace=traceback.format_exc()
             )
             raise
-        await ExtractionTaskStateService.change_task_status(session, task_id, TaskStatusEnum.staged)
         return result
