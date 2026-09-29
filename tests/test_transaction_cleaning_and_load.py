@@ -105,4 +105,4 @@ async def test_new_registry_version_updates_the_row(session, persist):
     await load(session, task, assigned(tran_wersja_id="2019-01-01T00:00:00", lok_cena_brutto=1.0))
 
     row = await session.scalar(select(StagedTransaction))
-    assert (row.source_version, float(row.price_premises)) == ("2019-01-01T00:00:00", 1.0)
+    assert (row.date_source_version, float(row.price_premises)) == ("2019-01-01T00:00:00", 1.0)
