@@ -58,7 +58,7 @@ def city_of(territory: PrefixMap) -> str | None:
 class TerritoryAssignmentService:
     @staticmethod
     def read_transactions(archive: Path) -> list[dict[str, Any]]:
-        """Every row of the layer that has the identifier column, as column -> value dicts."""
+        """Open the powiat zip and return every row of its premises table as {column: value}."""
         with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(archive) as zf:
             name = next(n for n in zf.namelist() if n.endswith(".gpkg"))
             gpkg = Path(zf.extract(name, tmp))
@@ -83,22 +83,23 @@ class TerritoryAssignmentService:
         result = []
         for row in rows:
             territory = find_area(row.get("lok_id_lokalu"), territories)
-            fields = (
-                {
-                    "prefix_code": territory.prefix_code,
-                    "province_code": territory.voivodeship_teryt,
-                    "province_name": territory.voivodeship_name,
-                    "powiat_code": territory.powiat_teryt,
-                    "powiat_name": territory.powiat_name,
-                    "gmina_code": territory.gmina_teryt,
-                    "gmina_name": territory.gmina_name,
-                    "city_name": city_of(territory),
-                    "district_name": territory.district_name,
-                }
-                if territory
-                else {}
+            if territory is None:
+                result.append(AssignedTransactionDTO(transaction=row))
+                continue
+            result.append(
+                AssignedTransactionDTO(
+                    transaction=row,
+                    prefix_code=territory.prefix_code,
+                    province_code=territory.voivodeship_teryt,
+                    province_name=territory.voivodeship_name,
+                    powiat_code=territory.powiat_teryt,
+                    powiat_name=territory.powiat_name,
+                    gmina_code=territory.gmina_teryt,
+                    gmina_name=territory.gmina_name,
+                    city_name=city_of(territory),
+                    district_name=territory.district_name,
+                )
             )
-            result.append(AssignedTransactionDTO(transaction=row, **fields))
 
         log.info("assignment_ok territory_code=%s total=%d", territory_code, len(result))
         return result
