@@ -1,14 +1,27 @@
 import uuid
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.staged_transaction import StagedTransaction
+from polish_national_registry.territory_assignment import TransactionVersionDTO
 from polish_national_registry.transaction_cleaning import TransactionRecordDTO
 
 
 class StagedTransactionRepository:
+    @staticmethod
+    async def get_versions(session: AsyncSession, powiat_code: str) -> set[TransactionVersionDTO]:
+        """Key and version of every transaction of a powiat already in the database."""
+        result = await session.execute(
+            select(
+                StagedTransaction.external_transaction_identifier,
+                StagedTransaction.external_building_id,
+                StagedTransaction.date_source_version,
+            ).where(StagedTransaction.powiat_code == powiat_code)
+        )
+        return {TransactionVersionDTO(**row) for row in result.mappings()}
+
     @staticmethod
     async def upsert(
         session: AsyncSession, records: list[TransactionRecordDTO], run_id: uuid.UUID | None

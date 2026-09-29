@@ -1,12 +1,6 @@
-import asyncio
 import logging
-import sqlite3
-import tempfile
 import traceback
-import zipfile
-from contextlib import closing
-from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +12,34 @@ from polish_national_registry.status_service import ExtractionTaskStateService, 
 log = logging.getLogger(__name__)
 
 
-class TerritoryAssignmentError(Exception):
-    """The file could not be joined with the boundaries."""
+class TransactionVersionDTO(BaseModel):
+    """Key and version of one transaction in the registry."""
+
+    model_config = ConfigDict(frozen=True)
+
+    external_transaction_identifier: str | None
+    external_building_id: str | None
+    date_source_version: str | None
+
+
+class SourceTransactionDTO(BaseModel):
+    """One row of the premises layer its key and version, and all its columns."""
+
+    model_config = ConfigDict(frozen=True)
+
+    version: TransactionVersionDTO
+    row: dict[str, Any]
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> Self:
+        return cls(
+            version=TransactionVersionDTO(
+                external_transaction_identifier=row.get("tran_lokalny_id_iip"),
+                external_building_id=row.get("lok_id_lokalu"),
+                date_source_version=row.get("tran_wersja_id"),
+            ),
+            row=row,
+        )
 
 
 class AssignedTransactionDTO(BaseModel):
@@ -57,38 +77,21 @@ def city_of(territory: PrefixMap) -> str | None:
 
 class TerritoryAssignmentService:
     @staticmethod
-    def read_transactions(archive: Path) -> list[dict[str, Any]]:
-        """Open the powiat zip and return every row of its premises table as {column: value}."""
-        with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(archive) as zf:
-            name = next(n for n in zf.namelist() if n.endswith(".gpkg"))
-            gpkg = Path(zf.extract(name, tmp))
-            with closing(sqlite3.connect(gpkg)) as conn:
-                conn.row_factory = sqlite3.Row
-                tables = [r[0] for r in conn.execute("SELECT table_name FROM gpkg_contents")]
-                for table in tables:
-                    columns = [c[1] for c in conn.execute(f'PRAGMA table_info("{table}")')]
-                    if "lok_id_lokalu" in columns:
-                        rows = conn.execute(f'SELECT * FROM "{table}"')  # noqa: S608
-                        return [dict(row) for row in rows]
-        raise TerritoryAssignmentError(f"{archive.name}: no layer with column {'lok_id_lokalu'}")
-
-    @staticmethod
     async def assign_one(
-        session: AsyncSession, territory_code: str, archive: Path
+        session: AsyncSession, territory_code: str, transactions: list[SourceTransactionDTO]
     ) -> list[AssignedTransactionDTO]:
-        """Read one powiat file and attach the territory to every transaction."""
+        """Attach the territory to every transaction of one powiat."""
         territories = await PrefixMapRepository.load_powiat_index(session, territory_code)
-        rows = await asyncio.to_thread(TerritoryAssignmentService.read_transactions, archive)
 
         result = []
-        for row in rows:
-            territory = find_area(row.get("lok_id_lokalu"), territories)
+        for transaction in transactions:
+            territory = find_area(transaction.version.external_building_id, territories)
             if territory is None:
-                result.append(AssignedTransactionDTO(transaction=row))
+                result.append(AssignedTransactionDTO(transaction=transaction.row))
                 continue
             result.append(
                 AssignedTransactionDTO(
-                    transaction=row,
+                    transaction=transaction.row,
                     prefix_code=territory.prefix_code,
                     province_code=territory.voivodeship_teryt,
                     province_name=territory.voivodeship_name,
@@ -106,14 +109,19 @@ class TerritoryAssignmentService:
 
     @staticmethod
     async def start_assigning(
-        session: AsyncSession, task_id: int, territory_code: str, archive: Path
+        session: AsyncSession,
+        task_id: int,
+        territory_code: str,
+        transactions: list[SourceTransactionDTO],
     ) -> list[AssignedTransactionDTO]:
         """Join one powiat and keep its task status up to joining."""
         await ExtractionTaskStateService.change_task_status(
             session, task_id, TaskStatusEnum.assigning
         )
         try:
-            result = await TerritoryAssignmentService.assign_one(session, territory_code, archive)
+            result = await TerritoryAssignmentService.assign_one(
+                session, territory_code, transactions
+            )
         except Exception:
             await session.rollback()
             await ExtractionTaskStateService.fail(
