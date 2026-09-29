@@ -23,7 +23,7 @@ class TransactionLoadService:
         """Save one powiat and set staged in the same commit"""
         unique_by_key = {}
         for record in records:
-            key = (record.source_local_id, record.premises_id)
+            key = (record.external_transaction_identifier, record.external_building_id)
             unique_by_key[key] = record
         unique: list[TransactionRecordDTO] = list(unique_by_key.values())
 

@@ -29,6 +29,8 @@ class StagedTransactionRepository:
                 "updated_at": func.now(),
                 "delivered_at": None,
             },
-            where=StagedTransaction.source_version.is_distinct_from(new_row.source_version),
+            where=StagedTransaction.date_source_version.is_distinct_from(
+                new_row.date_source_version
+            ),
         )
         await session.execute(stmt, [record.model_dump() for record in records])

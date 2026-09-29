@@ -12,14 +12,14 @@ from database.models.base_class import Base
 class StagedTransaction(Base):
     """A cleaned transaction waiting for delivery to the Backend"""
 
-    __tablename__ = "staged_transactions"
+    __tablename__ = "property_transactions"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
-    source_local_id: Mapped[str] = mapped_column(String(64))
-    premises_id: Mapped[str | None] = mapped_column(String(128))
-    source_version: Mapped[str | None] = mapped_column(String(32))
+    external_transaction_identifier: Mapped[str] = mapped_column(String(64))
+    external_building_id: Mapped[str | None] = mapped_column(String(128))
+    date_source_version: Mapped[str | None] = mapped_column(String(32))
 
     transaction_date: Mapped[date | None] = mapped_column(Date)
     price_premises: Mapped[float | None] = mapped_column(Numeric(14, 2))
@@ -44,8 +44,8 @@ class StagedTransaction(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "source_local_id",
-            "premises_id",
+            "external_transaction_identifier",
+            "external_building_id",
             name="uq_staged_transactions_key",
             postgresql_nulls_not_distinct=True,
         ),

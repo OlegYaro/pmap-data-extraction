@@ -2,7 +2,7 @@ import logging
 import traceback
 from collections import Counter
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,9 +38,9 @@ class TransactionRecordDTO(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    source_local_id: str | None
-    premises_id: str | None
-    source_version: str | None
+    external_transaction_identifier: str | None
+    external_building_id: str | None
+    date_source_version: str | None
     transaction_date: date | None
     price_premises: float | None
     area_usable: float | None
@@ -55,6 +55,32 @@ class TransactionRecordDTO(BaseModel):
     district_name: str | None
     exclusion_reason: str | None
     attributes: dict[str, Any]
+
+    @classmethod
+    def from_assigned_transaction_dto(
+        cls, assigned: AssignedTransactionDTO, premises_in_deal: int
+    ) -> Self:
+        """Take the needed fields of one row and mark it."""
+        source = assigned.transaction
+        return cls(
+            external_transaction_identifier=source.get("tran_lokalny_id_iip"),
+            external_building_id=source.get("lok_id_lokalu"),
+            date_source_version=source.get("tran_wersja_id"),
+            transaction_date=to_date(source.get("dok_data")),
+            price_premises=source.get("lok_cena_brutto"),
+            area_usable=source.get("lok_pow_uzyt"),
+            rooms=source.get("lok_liczba_izb"),
+            floor=source.get("lok_nr_kond"),
+            market_type=source.get("tran_rodzaj_rynku"),
+            function=source.get("lok_funkcja"),
+            address=source.get("lok_adres"),
+            powiat_code=source["teryt"],
+            gmina_code=assigned.gmina_code,
+            city_name=assigned.city_name,
+            district_name=assigned.district_name,
+            exclusion_reason=exclusion_reason(assigned, premises_in_deal),
+            attributes={key: source.get(key) for key in ATTRIBUTES},
+        )
 
 
 def to_date(value: str | None) -> date | None:
@@ -100,37 +126,13 @@ def exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) ->
 
 class TransactionCleaningService:
     @staticmethod
-    def to_record(assigned: AssignedTransactionDTO, premises_in_deal: int) -> TransactionRecordDTO:
-        """Take the needed fields of one row and mark it"""
-        source = assigned.transaction
-        return TransactionRecordDTO(
-            source_local_id=source.get("tran_lokalny_id_iip"),
-            premises_id=source.get("lok_id_lokalu"),
-            source_version=source.get("tran_wersja_id"),
-            transaction_date=to_date(source.get("dok_data")),
-            price_premises=source.get("lok_cena_brutto"),
-            area_usable=source.get("lok_pow_uzyt"),
-            rooms=source.get("lok_liczba_izb"),
-            floor=source.get("lok_nr_kond"),
-            market_type=source.get("tran_rodzaj_rynku"),
-            function=source.get("lok_funkcja"),
-            address=source.get("lok_adres"),
-            powiat_code=source["teryt"],
-            gmina_code=assigned.gmina_code,
-            city_name=assigned.city_name,
-            district_name=assigned.district_name,
-            exclusion_reason=exclusion_reason(assigned, premises_in_deal),
-            attributes={key: source.get(key) for key in ATTRIBUTES},
-        )
-
-    @staticmethod
     def clean_all(assigned: list[AssignedTransactionDTO]) -> list[TransactionRecordDTO]:
         """Clean one powiat file the package rule counts premises of one deed over the file."""
         premises_per_deal = Counter(
             item.transaction.get("tran_lokalny_id_iip") for item in assigned
         )
         return [
-            TransactionCleaningService.to_record(
+            TransactionRecordDTO.from_assigned_transaction_dto(
                 item, premises_per_deal[item.transaction.get("tran_lokalny_id_iip")]
             )
             for item in assigned
