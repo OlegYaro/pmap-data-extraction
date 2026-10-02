@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.repositories.staged_transaction import StagedTransactionRepository
+from database.repositories.property_transaction import StagedTransactionRepository
 from polish_national_registry.status_service import ExtractionTaskStateService
 from polish_national_registry.territory_assignment import (
     SourceTransactionDTO,

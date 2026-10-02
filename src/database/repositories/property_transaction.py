@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.transactions import TransactionQuery
-from database.models.staged_transaction import StagedTransaction
+from database.models.property_transaction import PropertyTransaction
 from polish_national_registry.territory_assignment import TransactionVersionDTO
 from polish_national_registry.transaction_cleaning import TransactionRecordDTO
 
@@ -16,10 +16,10 @@ class StagedTransactionRepository:
         """Key and version of every transaction of a powiat already in the database."""
         result = await session.execute(
             select(
-                StagedTransaction.external_transaction_identifier,
-                StagedTransaction.external_building_id,
-                StagedTransaction.date_source_version,
-            ).where(StagedTransaction.powiat_code == powiat_code)
+                PropertyTransaction.external_transaction_identifier,
+                PropertyTransaction.external_building_id,
+                PropertyTransaction.date_source_version,
+            ).where(PropertyTransaction.powiat_code == powiat_code)
         )
         return {TransactionVersionDTO(**row) for row in result.mappings()}
 
@@ -31,7 +31,7 @@ class StagedTransactionRepository:
         if not records:
             return
 
-        stmt = insert(StagedTransaction).values(run_id=run_id)
+        stmt = insert(PropertyTransaction).values(run_id=run_id)
         new_row = stmt.excluded
 
         updated_fields = {field: new_row[field] for field in TransactionRecordDTO.model_fields}
@@ -43,7 +43,7 @@ class StagedTransactionRepository:
                 "updated_at": func.now(),
                 "delivered_at": None,
             },
-            where=StagedTransaction.date_source_version.is_distinct_from(
+            where=PropertyTransaction.date_source_version.is_distinct_from(
                 new_row.date_source_version
             ),
         )
@@ -52,44 +52,44 @@ class StagedTransactionRepository:
     @staticmethod
     async def list_by_query(
         session: AsyncSession, query: TransactionQuery
-    ) -> list[StagedTransaction]:
+    ) -> list[PropertyTransaction]:
         """Clean transactions matching the query; a filter that is not passed is skipped."""
 
-        stmt = select(StagedTransaction).where(StagedTransaction.exclusion_reason.is_(None))
+        stmt = select(PropertyTransaction).where(PropertyTransaction.exclusion_reason.is_(None))
 
         if query.run_id is not None:
-            stmt = stmt.where(StagedTransaction.run_id == query.run_id)
+            stmt = stmt.where(PropertyTransaction.run_id == query.run_id)
         if query.powiat_code is not None:
-            stmt = stmt.where(StagedTransaction.powiat_code == query.powiat_code)
+            stmt = stmt.where(PropertyTransaction.powiat_code == query.powiat_code)
         if query.gmina_code is not None:
-            stmt = stmt.where(StagedTransaction.gmina_code == query.gmina_code)
+            stmt = stmt.where(PropertyTransaction.gmina_code == query.gmina_code)
         if query.city_name is not None:
-            stmt = stmt.where(StagedTransaction.city_name == query.city_name)
+            stmt = stmt.where(PropertyTransaction.city_name == query.city_name)
         if query.district_name is not None:
-            stmt = stmt.where(StagedTransaction.district_name == query.district_name)
+            stmt = stmt.where(PropertyTransaction.district_name == query.district_name)
         if query.market_type is not None:
-            stmt = stmt.where(StagedTransaction.market_type == query.market_type)
+            stmt = stmt.where(PropertyTransaction.market_type == query.market_type)
         if query.function is not None:
-            stmt = stmt.where(StagedTransaction.function == query.function)
+            stmt = stmt.where(PropertyTransaction.function == query.function)
 
         if query.date_from is not None:
-            stmt = stmt.where(StagedTransaction.transaction_date >= query.date_from)
+            stmt = stmt.where(PropertyTransaction.transaction_date >= query.date_from)
         if query.date_to is not None:
-            stmt = stmt.where(StagedTransaction.transaction_date <= query.date_to)
+            stmt = stmt.where(PropertyTransaction.transaction_date <= query.date_to)
         if query.price_min is not None:
-            stmt = stmt.where(StagedTransaction.price_premises >= query.price_min)
+            stmt = stmt.where(PropertyTransaction.price_premises >= query.price_min)
         if query.price_max is not None:
-            stmt = stmt.where(StagedTransaction.price_premises <= query.price_max)
+            stmt = stmt.where(PropertyTransaction.price_premises <= query.price_max)
         if query.area_min is not None:
-            stmt = stmt.where(StagedTransaction.area_usable >= query.area_min)
+            stmt = stmt.where(PropertyTransaction.area_usable >= query.area_min)
         if query.area_max is not None:
-            stmt = stmt.where(StagedTransaction.area_usable <= query.area_max)
+            stmt = stmt.where(PropertyTransaction.area_usable <= query.area_max)
         if query.floor_min is not None:
-            stmt = stmt.where(StagedTransaction.floor >= query.floor_min)
+            stmt = stmt.where(PropertyTransaction.floor >= query.floor_min)
         if query.floor_max is not None:
-            stmt = stmt.where(StagedTransaction.floor <= query.floor_max)
+            stmt = stmt.where(PropertyTransaction.floor <= query.floor_max)
         if query.rooms:
-            stmt = stmt.where(StagedTransaction.rooms.in_(query.rooms))
+            stmt = stmt.where(PropertyTransaction.rooms.in_(query.rooms))
 
-        result = await session.scalars(stmt.order_by(StagedTransaction.id))
+        result = await session.scalars(stmt.order_by(PropertyTransaction.id))
         return list(result)

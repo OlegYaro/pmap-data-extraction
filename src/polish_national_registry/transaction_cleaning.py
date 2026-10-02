@@ -34,7 +34,7 @@ CLEAN_PRICE_PER_SQM_MAX = None
 
 
 class TransactionRecordDTO(BaseModel):
-    """One premises of a transaction, as it goes to staged_transactions."""
+    """DTO for one row of the premises layer with its key and version, all its columns, and the reason it is excluded if any."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -78,7 +78,7 @@ class TransactionRecordDTO(BaseModel):
             gmina_code=assigned.gmina_code,
             city_name=assigned.city_name,
             district_name=assigned.district_name,
-            exclusion_reason=exclusion_reason(assigned, premises_in_deal),
+            exclusion_reason=_exclusion_reason(assigned, premises_in_deal),
             attributes={key: source.get(key) for key in ATTRIBUTES},
         )
 
@@ -90,7 +90,7 @@ def to_date(value: str | None) -> date | None:
     return (datetime.fromisoformat(value) + timedelta(hours=2)).date()
 
 
-def exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) -> str | None:
+def _exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) -> str | None:
     """Why the transaction is wrong, the first rule that fires, None means it is fine."""
     source = assigned.transaction
     price = source.get("lok_cena_brutto") or 0

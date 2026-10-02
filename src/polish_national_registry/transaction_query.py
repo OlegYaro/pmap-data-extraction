@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas.transactions import TransactionQuery
-from database.repositories.staged_transaction import StagedTransactionRepository
+from database.repositories.property_transaction import StagedTransactionRepository
 
 
 class StagedTransactionDTO(BaseModel):
