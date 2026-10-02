@@ -36,7 +36,7 @@ async def run_territory(session: AsyncSession, task_id: int) -> None:
     transactions = await TransactionFilterService.start_filtering(
         session, task_id, task.territory_code, path
     )
-    assigned = await TerritoryAssignmentService.start_assigning(
+    assigned = await TerritoryAssignmentService.assign_territory(
         session, task_id, task.territory_code, transactions
     )
     records = await TransactionCleaningService.start_cleaning(
