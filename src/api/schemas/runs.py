@@ -31,6 +31,7 @@ class RunStatusResponse(BaseModel):
     run_id: uuid.UUID
     total: int
     downloaded: int
+    assigned: int
     not_published: int
     failed: int
     in_progress: int

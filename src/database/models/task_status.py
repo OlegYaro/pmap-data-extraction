@@ -14,7 +14,7 @@ class TaskStatusEnum(enum.StrEnum):
     queued = "queued"
     downloading = "downloading"
     cleaning = "cleaning"
-    joining = "joining"
+    assigning = "assigning"
     staged = "staged"
     done = "done"
     not_published = "not_published"

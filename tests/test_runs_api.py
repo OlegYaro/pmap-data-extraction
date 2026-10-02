@@ -29,7 +29,7 @@ async def test_start_pipeline_queues_the_orchestrator(client, monkeypatch):
 
 async def test_get_run_returns_counters(client, persist):
     await persist(
-        TaskFactory(status=TaskStatusEnum.staged),
+        TaskFactory(status=TaskStatusEnum.assigning),
         TaskFactory(status=TaskStatusEnum.failed, failed_stage="downloading", error_trace="boom"),
     )
 

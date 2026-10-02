@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 ENUM_NAME = "taskstatusenum"
-NEW_VALUES = ("cleaning", "joining", "done", "not_published")
+NEW_VALUES = ("cleaning", "assigning", "done", "not_published")
 
 
 def upgrade() -> None:
