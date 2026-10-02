@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.schemas.transactions import TransactionQuery
 from database.models.staged_transaction import StagedTransaction
 from polish_national_registry.territory_assignment import TransactionVersionDTO
 from polish_national_registry.transaction_cleaning import TransactionRecordDTO
@@ -47,3 +48,48 @@ class StagedTransactionRepository:
             ),
         )
         await session.execute(stmt, [record.model_dump() for record in records])
+
+    @staticmethod
+    async def list_by_query(
+        session: AsyncSession, query: TransactionQuery
+    ) -> list[StagedTransaction]:
+        """Clean transactions matching the query; a filter that is not passed is skipped."""
+
+        stmt = select(StagedTransaction).where(StagedTransaction.exclusion_reason.is_(None))
+
+        if query.run_id is not None:
+            stmt = stmt.where(StagedTransaction.run_id == query.run_id)
+        if query.powiat_code is not None:
+            stmt = stmt.where(StagedTransaction.powiat_code == query.powiat_code)
+        if query.gmina_code is not None:
+            stmt = stmt.where(StagedTransaction.gmina_code == query.gmina_code)
+        if query.city_name is not None:
+            stmt = stmt.where(StagedTransaction.city_name == query.city_name)
+        if query.district_name is not None:
+            stmt = stmt.where(StagedTransaction.district_name == query.district_name)
+        if query.market_type is not None:
+            stmt = stmt.where(StagedTransaction.market_type == query.market_type)
+        if query.function is not None:
+            stmt = stmt.where(StagedTransaction.function == query.function)
+
+        if query.date_from is not None:
+            stmt = stmt.where(StagedTransaction.transaction_date >= query.date_from)
+        if query.date_to is not None:
+            stmt = stmt.where(StagedTransaction.transaction_date <= query.date_to)
+        if query.price_min is not None:
+            stmt = stmt.where(StagedTransaction.price_premises >= query.price_min)
+        if query.price_max is not None:
+            stmt = stmt.where(StagedTransaction.price_premises <= query.price_max)
+        if query.area_min is not None:
+            stmt = stmt.where(StagedTransaction.area_usable >= query.area_min)
+        if query.area_max is not None:
+            stmt = stmt.where(StagedTransaction.area_usable <= query.area_max)
+        if query.floor_min is not None:
+            stmt = stmt.where(StagedTransaction.floor >= query.floor_min)
+        if query.floor_max is not None:
+            stmt = stmt.where(StagedTransaction.floor <= query.floor_max)
+        if query.rooms:
+            stmt = stmt.where(StagedTransaction.rooms.in_(query.rooms))
+
+        result = await session.scalars(stmt.order_by(StagedTransaction.id))
+        return list(result)
