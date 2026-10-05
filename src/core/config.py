@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     DOWNLOAD_DIR: Path = Path("data/rcn")
     DOWNLOAD_CONCURRENCY: int = 4
     LOG_LEVEL: str = "INFO"
+    S3_BUCKET_RAW: str | None = None
+    S3_REGION: str = "eu-central-1"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
