@@ -97,8 +97,8 @@ class DataDownloadService:
     @staticmethod
     async def archive_one(territory_code: str, path: Path) -> None:
         """Put a downloaded file to S3 unless S3 already has this version of it. The key contains the sha256 of the file, so the same file always gets the same key."""
-        sha256 = await asyncio.to_thread(DataDownloadService.sha256_of, path)
-        key = f"raw/{territory_code}/{sha256}/{path.name}"
+        checksum = await asyncio.to_thread(DataDownloadService.sha256_of, path)
+        key = f"raw/{territory_code}/{checksum}/{path.name}"
         if await archive.exists(key):
             log.info("archive_unchanged territory_code=%s key=%s", territory_code, key)
             return
@@ -118,6 +118,13 @@ class DataDownloadService:
                 path = await DataDownloadService.download_one(territory_code, target_dir, client)
             if path is not None and settings.S3_BUCKET_RAW:
                 await DataDownloadService.archive_one(territory_code, path)
+            else:
+                log.info(
+                    "archive_skipped territory_code=%s path=%s bucket=%s",
+                    territory_code,
+                    path,
+                    settings.S3_BUCKET_RAW,
+                )
         except Exception:
             await session.rollback()
             await ExtractionTaskStateService.fail(
