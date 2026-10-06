@@ -11,7 +11,7 @@ from core.config import settings
 from database.models.base_class import Base
 import database.models.prefix_map
 import database.models.task_status
-import database.models.staged_transaction  # noqa: F401
+import database.models.property_transaction  # noqa: F401
 
 
 config = context.config

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from database.models.base_class import Base
 
 
-class StagedTransaction(Base):
+class PropertyTransaction(Base):
     """A cleaned transaction waiting for delivery to the Backend"""
 
     __tablename__ = "property_transactions"

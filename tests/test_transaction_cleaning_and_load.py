@@ -1,6 +1,6 @@
 from sqlalchemy import select
 
-from database.models.staged_transaction import StagedTransaction
+from database.models.property_transaction import StagedTransaction
 from database.models.task_status import TaskStatusEnum
 from polish_national_registry.territory_assignment import AssignedTransactionDTO
 from polish_national_registry.transaction_cleaning import TransactionCleaningService

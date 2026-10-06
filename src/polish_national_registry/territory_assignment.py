@@ -108,7 +108,7 @@ class TerritoryAssignmentService:
         return result
 
     @staticmethod
-    async def start_assigning(
+    async def assign_territory(
         session: AsyncSession,
         task_id: int,
         territory_code: str,

@@ -1,5 +1,5 @@
 from database.models.task_status import TaskStatusEnum
-from database.repositories.staged_transaction import StagedTransactionRepository
+from database.repositories.property_transaction import StagedTransactionRepository
 from polish_national_registry.territory_assignment import SourceTransactionDTO
 from polish_national_registry.transaction_filter import TransactionFilterService
 from polish_national_registry.transaction_load import TransactionLoadService
