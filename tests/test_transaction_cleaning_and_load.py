@@ -1,6 +1,6 @@
 from sqlalchemy import select
 
-from database.models.property_transaction import StagedTransaction
+from database.models.property_transaction import PropertyTransaction
 from database.models.task_status import TaskStatusEnum
 from polish_national_registry.territory_assignment import AssignedTransactionDTO
 from polish_national_registry.transaction_cleaning import TransactionCleaningService
@@ -93,7 +93,7 @@ async def test_loaded_powiat_is_staged_and_undelivered(session, persist):
     await load(session, task, assigned())
 
     await session.refresh(task)
-    row = await session.scalar(select(StagedTransaction))
+    row = await session.scalar(select(PropertyTransaction))
     assert task.status == TaskStatusEnum.done
     assert (row.run_id, row.delivered_at) == (task.run_id, None)
 
@@ -104,5 +104,5 @@ async def test_new_registry_version_updates_the_row(session, persist):
     await load(session, task, assigned())
     await load(session, task, assigned(tran_wersja_id="2019-01-01T00:00:00", lok_cena_brutto=1.0))
 
-    row = await session.scalar(select(StagedTransaction))
+    row = await session.scalar(select(PropertyTransaction))
     assert (row.date_source_version, float(row.price_premises)) == ("2019-01-01T00:00:00", 1.0)

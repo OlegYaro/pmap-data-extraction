@@ -33,9 +33,13 @@ async def run_territory(session: AsyncSession, task_id: int) -> None:
     )
     if path is None:
         return
-    transactions = await TransactionFilterService.start_filtering(
-        session, task_id, task.territory_code, path
-    )
+    try:
+        transactions = await TransactionFilterService.start_filtering(
+            session, task_id, task.territory_code, path
+        )
+    finally:
+        # The local copy is not needed once it has been read; on the server the file is in S3.
+        path.unlink(missing_ok=True)
     assigned = await TerritoryAssignmentService.assign_territory(
         session, task_id, task.territory_code, transactions
     )

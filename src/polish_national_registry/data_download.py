@@ -1,3 +1,5 @@
+import asyncio
+import hashlib
 import logging
 import traceback
 import uuid
@@ -6,6 +8,8 @@ from pathlib import Path
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import settings
+from core.storage import archive
 from polish_national_registry.status_service import ExtractionTaskStateService, TaskStatusEnum
 
 log = logging.getLogger(__name__)
@@ -85,6 +89,23 @@ class DataDownloadService:
         return target
 
     @staticmethod
+    def sha256_of(path: Path) -> str:
+        """The checksum of a file two files with the same checksum are the same version."""
+        with path.open("rb") as fh:
+            return hashlib.file_digest(fh, "sha256").hexdigest()
+
+    @staticmethod
+    async def archive_one(territory_code: str, path: Path) -> None:
+        """Put a downloaded file to S3 unless S3 already has this version of it. The key contains the sha256 of the file, so the same file always gets the same key."""
+        checksum = await asyncio.to_thread(DataDownloadService.sha256_of, path)
+        key = f"raw/{territory_code}/{checksum}/{path.name}"
+        if await archive.exists(key):
+            log.info("archive_unchanged territory_code=%s key=%s", territory_code, key)
+            return
+        await archive.put_file(key, path)
+        log.info("archive_ok territory_code=%s key=%s", territory_code, key)
+
+    @staticmethod
     async def start_downloading(
         session: AsyncSession, task_id: int, territory_code: str, target_dir: Path
     ) -> Path | None:
@@ -95,6 +116,15 @@ class DataDownloadService:
         try:
             async with DataDownloadService.client() as client:
                 path = await DataDownloadService.download_one(territory_code, target_dir, client)
+            if path is not None and settings.S3_BUCKET_RAW:
+                await DataDownloadService.archive_one(territory_code, path)
+            else:
+                log.info(
+                    "archive_skipped territory_code=%s path=%s bucket=%s",
+                    territory_code,
+                    path,
+                    settings.S3_BUCKET_RAW,
+                )
         except Exception:
             await session.rollback()
             await ExtractionTaskStateService.fail(
