@@ -16,8 +16,7 @@ Parameters:
     Default: rds
     AllowedValues: [rds, aurora]
     Description: >-
-      rds = RDS PostgreSQL db.t4g.micro inside the VPC (works on the Free
-      plan). aurora = Aurora PostgreSQL Serverless v2 inside the VPC (needs
+      rds = RDS PostgreSQL inside the VPC (works on the Free plan). aurora = Aurora PostgreSQL Serverless v2 inside the VPC (needs
       the Paid plan). Changing the value on an existing stack creates a new
       empty database, the data is not moved.
   DbEngineVersion:
@@ -37,6 +36,19 @@ Parameters:
     Type: String
     Default: "2"
     AllowedValues: ["1", "2", "4"]
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues: [db.t3.micro, db.t4g.micro]
+    Description: >-
+      Instance class of the RDS database (DbEngine=rds). Both are covered by
+      the Free plan. If creation fails with "no Availability Zones with
+      sufficient capacity", switch to the other one.
+  DbStorageType:
+    Type: String
+    Default: gp3
+    AllowedValues: [gp3, gp2]
+    Description: Storage type of the RDS database (DbEngine=rds).
   RedisNodeType:
     Type: String
     Default: cache.t4g.micro
@@ -111,9 +123,9 @@ Resources:
     Properties:
       Engine: postgres
       EngineVersion: !If [HasEngineVersion, !Ref DbEngineVersion, !Ref "AWS::NoValue"]
-      DBInstanceClass: db.t4g.micro
+      DBInstanceClass: !Ref DbInstanceClass
       AllocatedStorage: "20"
-      StorageType: gp3
+      StorageType: !Ref DbStorageType
       DBName: extraction
       MasterUsername: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:username}}"
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:password}}"
@@ -147,7 +159,9 @@ Resources:
   # Raw RCN files must never be deleted (C-01), so the bucket outlives the stack.
   RawBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    # Kept when the stack is deleted, but removed if the very first creation
+    # of the stack fails, so a retry does not hit "bucket already exists".
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "${Project}-${Env}-rcn-raw-${AWS::AccountId}"
