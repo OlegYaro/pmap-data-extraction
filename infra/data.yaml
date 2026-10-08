@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  PMAP data layer: PostgreSQL (Aurora Serverless v2 or plain RDS) and
+  ElastiCache Redis in the private subnets, the S3 bucket for raw files and
+  the master database password in Secrets Manager.
+
+Parameters:
+  Project:
+    Type: String
+    Default: pmap
+  Env:
+    Type: String
+    Default: dev
+  DbEngine:
+    Type: String
+    Default: rds
+    AllowedValues: [rds, aurora]
+    Description: >-
+      rds = RDS PostgreSQL db.t4g.micro inside the VPC (works on the Free
+      plan). aurora = Aurora PostgreSQL Serverless v2 inside the VPC (needs
+      the Paid plan). Changing the value on an existing stack creates a new
+      empty database, the data is not moved.
+  DbEngineVersion:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional PostgreSQL version, for example 16.8. Empty = the AWS default.
+      With aurora and AuroraMinCapacity 0 it must be 16.3 or newer.
+  AuroraMinCapacity:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "0.5", "1"]
+    Description: >-
+      Minimum Aurora capacity in ACU. 0 = the database pauses after 10 minutes
+      without connections and costs nothing for compute while paused.
+  AuroraMaxCapacity:
+    Type: String
+    Default: "2"
+    AllowedValues: ["1", "2", "4"]
+  RedisNodeType:
+    Type: String
+    Default: cache.t4g.micro
+
+Conditions:
+  UseAurora: !Equals [!Ref DbEngine, aurora]
+  UseRds: !Equals [!Ref DbEngine, rds]
+  HasEngineVersion: !Not [!Equals [!Ref DbEngineVersion, ""]]
+  AuroraAutoPause: !Equals [!Ref AuroraMinCapacity, "0"]
+
+Resources:
+  # Generated once. No punctuation, so the password is safe inside a URL.
+  DbMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub "${Project}/${Env}/db-master"
+      Description: Master user of the PMAP database
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "pmap_admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for the PMAP database
+      SubnetIds: !Split
+        - ","
+        - Fn::ImportValue: !Sub "${Project}-${Env}-PrivateSubnets"
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Condition: UseAurora
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: !If [HasEngineVersion, !Ref DbEngineVersion, !Ref "AWS::NoValue"]
+      DatabaseName: extraction
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VpcSecurityGroupIds:
+        - Fn::ImportValue: !Sub "${Project}-${Env}-DatabaseSecurityGroup"
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: !Ref AuroraMinCapacity
+        MaxCapacity: !Ref AuroraMaxCapacity
+        SecondsUntilAutoPause: !If [AuroraAutoPause, 600, !Ref "AWS::NoValue"]
+      StorageEncrypted: true
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Condition: UseAurora
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      PubliclyAccessible: false
+
+  RdsInstance:
+    Type: AWS::RDS::DBInstance
+    Condition: UseRds
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: !If [HasEngineVersion, !Ref DbEngineVersion, !Ref "AWS::NoValue"]
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: "20"
+      StorageType: gp3
+      DBName: extraction
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub "${Project}-${Env}-DatabaseSecurityGroup"
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Private subnets for PMAP Redis
+      SubnetIds: !Split
+        - ","
+        - Fn::ImportValue: !Sub "${Project}-${Env}-PrivateSubnets"
+
+  Redis:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      Engine: redis
+      CacheNodeType: !Ref RedisNodeType
+      NumCacheNodes: 1
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      VpcSecurityGroupIds:
+        - Fn::ImportValue: !Sub "${Project}-${Env}-RedisSecurityGroup"
+
+  # Raw RCN files must never be deleted (C-01), so the bucket outlives the stack.
+  RawBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${Project}-${Env}-rcn-raw-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+Outputs:
+  DbHost:
+    Value: !If
+      - UseAurora
+      - !GetAtt AuroraCluster.Endpoint.Address
+      - !GetAtt RdsInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${Project}-${Env}-DbHost"
+  DbInstanceId:
+    Condition: UseRds
+    Description: Identifier for aws rds stop-db-instance / start-db-instance
+    Value: !Ref RdsInstance
+  DbMasterSecretArn:
+    Value: !Ref DbMasterSecret
+    Export:
+      Name: !Sub "${Project}-${Env}-DbMasterSecretArn"
+  RedisHost:
+    Value: !GetAtt Redis.RedisEndpoint.Address
+    Export:
+      Name: !Sub "${Project}-${Env}-RedisHost"
+  RawBucketName:
+    Value: !Ref RawBucket
+    Export:
+      Name: !Sub "${Project}-${Env}-RawBucketName"
+  RawBucketArn:
+    Value: !GetAtt RawBucket.Arn
+    Export:
+      Name: !Sub "${Project}-${Env}-RawBucketArn"
