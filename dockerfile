@@ -8,6 +8,7 @@ RUN poetry config virtualenvs.create false && poetry install --only main --no-ro
 
 COPY src ./src
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY alembic.ini ./
 RUN poetry install --only-root
 
