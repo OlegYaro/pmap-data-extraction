@@ -1,4 +1,5 @@
 import asyncio
+from functools import cached_property
 from pathlib import Path
 
 import boto3
@@ -13,8 +14,10 @@ class RawArchive:
     Credentials are not passed here: on AWS boto3 takes them from the IAM role of the server.
     """
 
-    def __init__(self) -> None:
-        self._client = boto3.client("s3", region_name=settings.S3_REGION)
+    @cached_property
+    def _client(self):
+        """Created on first use, so importing this module never looks up AWS credentials."""
+        return boto3.client("s3", region_name=settings.S3_REGION)
 
     async def exists(self, key: str) -> bool:
         """Whether S3 already has a file with this key."""
