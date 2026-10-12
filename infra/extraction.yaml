@@ -1,0 +1,378 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  PMAP extraction service: its own ECR repository and ECS cluster, three
+  Fargate services built from one image (api, worker, scheduler), and its
+  environment variables in Secrets Manager.
+
+Parameters:
+  Project:
+    Type: String
+    Default: pmap
+  Env:
+    Type: String
+    Default: dev
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag of the image in this stack's ECR repository.
+  DesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues: [0, 1]
+    Description: >-
+      0 = nothing runs (first deploy, before an image exists, and between
+      runs to save credits). 1 = api, worker and scheduler are running.
+  WorkerCpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["512", "1024", "2048"]
+    Description: >-
+      CPU units of the worker (1024 = 1 vCPU). Fargate accepts only some
+      pairs: 512 with 2048 or 4096; 1024 with 2048, 4096 or 8192; 2048 with
+      4096 or 8192.
+  WorkerMemory:
+    Type: String
+    Default: "2048"
+    AllowedValues: ["2048", "4096", "8192"]
+    Description: >-
+      Memory of the worker in MiB. Raise it if the worker stops with exit code
+      137 (out of memory) on a large powiat.
+
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${Project}-${Env}-extraction"
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${Project}-${Env}-extraction"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/ecs/${Project}-${Env}-extraction"
+      RetentionInDays: 30
+
+  # Every environment variable of the service is one key of this secret.
+  # To add a variable: add a key here and a line to Secrets in the containers.
+  EnvSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${Project}/${Env}/extraction"
+      Description: Environment variables of the extraction service
+      SecretString: !Sub
+        - >-
+          {"DB_URL": "postgresql+asyncpg://{{resolve:secretsmanager:${MasterSecretArn}:SecretString:username}}:{{resolve:secretsmanager:${MasterSecretArn}:SecretString:password}}@${DbHost}:5432/extraction",
+          "REDIS_URL": "redis://${RedisHost}:6379/0",
+          "S3_BUCKET_RAW": "${RawBucketName}",
+          "S3_REGION": "${AWS::Region}"}
+        - MasterSecretArn:
+            Fn::ImportValue: !Sub "${Project}-${Env}-DbMasterSecretArn"
+          DbHost:
+            Fn::ImportValue: !Sub "${Project}-${Env}-DbHost"
+          RedisHost:
+            Fn::ImportValue: !Sub "${Project}-${Env}-RedisHost"
+          RawBucketName:
+            Fn::ImportValue: !Sub "${Project}-${Env}-RawBucketName"
+
+  # Used by ECS itself: pull the image, write logs, read the secret.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: read-env-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref EnvSecret
+
+  # Used by the application code: boto3 gets S3 access from this role.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: raw-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Without ListBucket a missing key answers 403 instead of 404
+              # and RawArchive.exists() raises.
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  Fn::ImportValue: !Sub "${Project}-${Env}-RawBucketArn"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub
+                  - "${BucketArn}/raw/*"
+                  - BucketArn:
+                      Fn::ImportValue: !Sub "${Project}-${Env}-RawBucketArn"
+        - PolicyName: ecs-exec
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Project}-${Env}-extraction-api"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Sub "${Repository.RepositoryUri}:${ImageTag}"
+          Essential: true
+          Command: [uvicorn, "api.main:app", --host, 0.0.0.0, --port, "8000"]
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Secrets:
+            - Name: DB_URL
+              ValueFrom: !Sub "${EnvSecret}:DB_URL::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "${EnvSecret}:REDIS_URL::"
+            - Name: S3_BUCKET_RAW
+              ValueFrom: !Sub "${EnvSecret}:S3_BUCKET_RAW::"
+            - Name: S3_REGION
+              ValueFrom: !Sub "${EnvSecret}:S3_REGION::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Project}-${Env}-extraction-worker"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref WorkerCpu
+      Memory: !Ref WorkerMemory
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Sub "${Repository.RepositoryUri}:${ImageTag}"
+          Essential: true
+          Command:
+            - taskiq
+            - worker
+            - "jobs.broker:broker"
+            - jobs.tasks
+            - --workers
+            - "1"
+            - --max-async-tasks
+            - "1"
+          # Fargate maximum: time for the powiat in progress to finish on deploy.
+          StopTimeout: 120
+          Secrets:
+            - Name: DB_URL
+              ValueFrom: !Sub "${EnvSecret}:DB_URL::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "${EnvSecret}:REDIS_URL::"
+            - Name: S3_BUCKET_RAW
+              ValueFrom: !Sub "${EnvSecret}:S3_BUCKET_RAW::"
+            - Name: S3_REGION
+              ValueFrom: !Sub "${EnvSecret}:S3_REGION::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  SchedulerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${Project}-${Env}-extraction-scheduler"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: app
+          Image: !Sub "${Repository.RepositoryUri}:${ImageTag}"
+          Essential: true
+          Command: [taskiq, scheduler, "jobs.broker:scheduler", jobs.tasks]
+          Secrets:
+            - Name: DB_URL
+              ValueFrom: !Sub "${EnvSecret}:DB_URL::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "${EnvSecret}:REDIS_URL::"
+            - Name: S3_BUCKET_RAW
+              ValueFrom: !Sub "${EnvSecret}:S3_BUCKET_RAW::"
+            - Name: S3_REGION
+              ValueFrom: !Sub "${EnvSecret}:S3_REGION::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: scheduler
+
+  # Registers the running api task in the private DNS namespace as
+  # extraction.<namespace>; ECS adds and removes the address itself.
+  ApiDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: extraction
+      NamespaceId:
+        Fn::ImportValue: !Sub "${Project}-${Env}-NamespaceId"
+      DnsConfig:
+        RoutingPolicy: MULTIVALUE
+        DnsRecords:
+          - Type: A
+            TTL: 10
+
+  ApiService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: api
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref ApiTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: true
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ApiDiscovery.Arn
+      DeploymentConfiguration:
+        # Fail the stack update quickly instead of waiting hours if the new
+        # tasks keep crashing.
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Split
+            - ","
+            - Fn::ImportValue: !Sub "${Project}-${Env}-PublicSubnets"
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: worker
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: true
+      DeploymentConfiguration:
+        # Stop the old worker before starting the new one.
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Split
+            - ","
+            - Fn::ImportValue: !Sub "${Project}-${Env}-PublicSubnets"
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+
+  SchedulerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: scheduler
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref SchedulerTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      EnableExecuteCommand: true
+      DeploymentConfiguration:
+        # Never two schedulers at once: each would queue its own run.
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Split
+            - ","
+            - Fn::ImportValue: !Sub "${Project}-${Env}-PublicSubnets"
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+
+Outputs:
+  RepositoryUri:
+    Value: !GetAtt Repository.RepositoryUri
+  ClusterName:
+    Value: !Ref Cluster
+  LogGroupName:
+    Value: !Ref LogGroup
+  EnvSecretArn:
+    Value: !Ref EnvSecret

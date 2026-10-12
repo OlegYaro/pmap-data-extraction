@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  PMAP network: VPC, public subnets for ECS tasks, private subnets for the
+  database and Redis, and the security groups shared by the other stacks.
+
+Parameters:
+  Project:
+    Type: String
+    Default: pmap
+  Env:
+    Type: String
+    Default: dev
+  AdminCidr:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. Your own IP as a.b.c.d/32 to open port 8000 of both APIs to you.
+      Leave empty to keep the APIs closed from the internet.
+
+Conditions:
+  HasAdminCidr: !Not [!Equals [!Ref AdminCidr, ""]]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}"
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public subnets: ECS tasks live here with a public IP, so they reach the
+  # geoportal, ECR and Secrets Manager without a NAT gateway.
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-public-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-public-b"
+
+  # Private subnets: no route to the internet at all. Database and Redis only.
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-private-a"
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.11.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-private-b"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-public"
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-private"
+
+  PrivateSubnetARoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetBRoute:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Private DNS inside the VPC: each service registers its API here, so the
+  # other one calls it by name (http://extraction.<namespace>:8000) instead of
+  # by a task IP that changes on every restart.
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub "${Project}-${Env}.internal"
+      Description: Internal names of the PMAP services
+      Vpc: !Ref Vpc
+
+  # One security group per service. Nothing is open from the internet unless
+  # AdminCidr is set.
+  ExtractionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Tasks of the extraction service
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-extraction"
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Tasks of the backend service
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-backend"
+
+  ExtractionFromBackend:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ExtractionSecurityGroup
+      Description: Backend calls the extraction API
+      IpProtocol: tcp
+      FromPort: 8000
+      ToPort: 8000
+      SourceSecurityGroupId: !Ref BackendSecurityGroup
+
+  BackendFromExtraction:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref BackendSecurityGroup
+      Description: Extraction calls the backend API
+      IpProtocol: tcp
+      FromPort: 8000
+      ToPort: 8000
+      SourceSecurityGroupId: !Ref ExtractionSecurityGroup
+
+  ExtractionFromAdmin:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasAdminCidr
+    Properties:
+      GroupId: !Ref ExtractionSecurityGroup
+      Description: Developer access to the extraction API
+      IpProtocol: tcp
+      FromPort: 8000
+      ToPort: 8000
+      CidrIp: !Ref AdminCidr
+
+  BackendFromAdmin:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasAdminCidr
+    Properties:
+      GroupId: !Ref BackendSecurityGroup
+      Description: Developer access to the backend API
+      IpProtocol: tcp
+      FromPort: 8000
+      ToPort: 8000
+      CidrIp: !Ref AdminCidr
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL, reachable only from the two services
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Extraction tasks
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ExtractionSecurityGroup
+        - Description: Backend tasks
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-database"
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Redis, reachable only from the two services
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Extraction tasks
+          IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ExtractionSecurityGroup
+        - Description: Backend tasks
+          IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-${Env}-redis"
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export:
+      Name: !Sub "${Project}-${Env}-VpcId"
+  PublicSubnets:
+    Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+    Export:
+      Name: !Sub "${Project}-${Env}-PublicSubnets"
+  PrivateSubnets:
+    Value: !Join [",", [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+    Export:
+      Name: !Sub "${Project}-${Env}-PrivateSubnets"
+  ExtractionSecurityGroup:
+    Value: !Ref ExtractionSecurityGroup
+    Export:
+      Name: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+  BackendSecurityGroup:
+    Value: !Ref BackendSecurityGroup
+    Export:
+      Name: !Sub "${Project}-${Env}-BackendSecurityGroup"
+  DatabaseSecurityGroup:
+    Value: !Ref DatabaseSecurityGroup
+    Export:
+      Name: !Sub "${Project}-${Env}-DatabaseSecurityGroup"
+  RedisSecurityGroup:
+    Value: !Ref RedisSecurityGroup
+    Export:
+      Name: !Sub "${Project}-${Env}-RedisSecurityGroup"
+  NamespaceId:
+    Value: !GetAtt Namespace.Id
+    Export:
+      Name: !Sub "${Project}-${Env}-NamespaceId"
+  NamespaceName:
+    Value: !Sub "${Project}-${Env}.internal"
+    Export:
+      Name: !Sub "${Project}-${Env}-NamespaceName"
