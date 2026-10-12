@@ -19,7 +19,6 @@ api_task() {
 update_stack() {
 	aws cloudformation deploy --stack-name "$STACK" --template-file infra/extraction.yaml \
 		--capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
-		${CFN_ROLE_ARN:+--role-arn "$CFN_ROLE_ARN"} \
 		--parameter-overrides ImageTag="$1" DesiredCount="$2"
 }
 

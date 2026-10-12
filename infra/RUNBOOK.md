@@ -1,6 +1,6 @@
 # Runbook: extraction on AWS (dev)
 
-Stacks: `pmap-dev-network`, `pmap-dev-data`, `pmap-dev-extraction`, `pmap-dev-github` (templates in `infra/`).
+Stacks: `pmap-dev-network`, `pmap-dev-data`, `pmap-dev-extraction` (templates in `infra/`).
 Region `eu-north-1`. Run everything from the repo root. A new, empty account: project doc "Инструкция по деплою".
 
 ## 1. Deploy main by hand
@@ -37,59 +37,36 @@ The tunnels go through the api container: they stop on every deploy.
 
 ```
 PR        -> checks: ruff, alembic upgrade head, pytest on Postgres
-push main -> checks -> deploy: make deploy (+ make aws-smoke on self-hosted)
+push main -> checks -> deploy (GitHub machine): make deploy
 ```
 
-### 3.1 Once, for both ways
+GitHub signs in to AWS as the IAM user `pmap-dev-github-deploy` with access keys from GitHub Secrets
+(OIDC is blocked by the account's SCP). Once:
 
-1. Roles for GitHub:
+```bash
+aws iam create-user --user-name pmap-dev-github-deploy
+aws iam attach-user-policy --user-name pmap-dev-github-deploy \
+  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+aws iam create-access-key --user-name pmap-dev-github-deploy   # shown only once
+```
 
-   ```bash
-   aws cloudformation deploy --stack-name pmap-dev-github --template-file infra/github.yaml \
-     --capabilities CAPABILITY_NAMED_IAM
-   aws cloudformation describe-stacks --stack-name pmap-dev-github \
-     --query "Stacks[0].Outputs[?OutputKey=='DeployRoleArn'].OutputValue" --output text
-   ```
+GitHub → Settings → Secrets and variables → Actions → **Secrets** → `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
 
-   `... already exists` on the OIDC provider: delete the failed stack, add `--parameter-overrides CreateOidcProvider=false`.
+New key (leaked, or once in a while):
 
-2. GitHub → Settings → Environments → New environment `dev` → Deployment branches and tags → Selected branches → `main`.
-3. GitHub → Settings → Secrets and variables → Actions → Variables → `AWS_DEPLOY_ROLE_ARN` = ARN from step 1.
+```bash
+aws iam list-access-keys --user-name pmap-dev-github-deploy
+aws iam create-access-key --user-name pmap-dev-github-deploy   # update both secrets
+aws iam delete-access-key --user-name pmap-dev-github-deploy --access-key-id <OLD_ID>
+```
 
-### 3.2 Way A: GitHub machine
-
-Nothing else. The `/health` check is skipped: port 8000 is open only to your IP.
-
-### 3.3 Way B: runner on the Mac
-
-1. GitHub → Settings → Actions → General → Fork pull request workflows → **Require approval for all external contributors**.
-2. GitHub → Settings → Actions → Runners → New self-hosted runner → macOS, ARM64. Copy the download commands, then:
-
-   ```bash
-   mkdir -p ~/actions-runner && cd ~/actions-runner
-   # curl ... && tar ...   (from the GitHub page)
-   ./config.sh --url https://github.com/OlegYaro/pmap-data-extraction --token <TOKEN> \
-     --name macbook --labels pmap-deploy --unattended
-   echo "$PATH" > .path        # in a terminal where docker, aws and make work
-   ./svc.sh install && ./svc.sh start
-   ```
-
-3. Variables → `DEPLOY_RUNNER` = `self-hosted`. Runners page: `macbook` is **Idle**. Docker Desktop must run, the Mac must not sleep.
-
-Back to way A: delete `DEPLOY_RUNNER`.
-
-### 3.4 Run
-
-Actions → ci → Run workflow → `main`, or merge a PR into `main`.
+Run: Actions → ci → Run workflow → `main`, or merge a PR into `main`.
 
 | Error | Fix |
 | --- | --- |
-| deploy job skipped | `AWS_DEPLOY_ROLE_ARN` not set, or not `main` |
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | environment is not `dev`, or repo name case differs from `GitHubRepo` |
-| `Waiting for a runner` | runner offline, Mac asleep, no `pmap-deploy` label |
-| `docker` / `aws: command not found` | `.path` of the runner, then `./svc.sh stop && ./svc.sh start` |
-| `Cannot connect to the Docker daemon` | start Docker Desktop |
-| `aws-smoke` times out | Mac IP is not `AdminCidr` of `pmap-dev-network` |
+| deploy job skipped | not `main`, or a pull request |
+| `Credentials could not be loaded` | secrets missing or misspelled |
+| `InvalidClientTokenId` / `SignatureDoesNotMatch` | wrong or deleted key: create a new one, update both secrets |
 
 ## 4. When something fails
 
