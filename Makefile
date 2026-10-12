@@ -1,4 +1,5 @@
-.PHONY: up down rebuild logs migrate create_migration downgrade psql lint check test test-db test-one fresh
+.PHONY: up down rebuild logs migrate create_migration downgrade psql lint check test test-db test-one fresh deploy aws-check aws-smoke aws-api-url aws-logs tunnel-db tunnel-redis aws-db-password
+
 
 # Pull in .env so the credentials live in one place and never reach the repo.
 # Leading dash: don't fail on a fresh clone where .env doesn't exist yet.
@@ -57,3 +58,30 @@ test-one: test-db
 
 load:
 	DB_URL=$(LOCAL_DB_URL) poetry run python scripts/load_prg.py
+
+
+#AWS
+
+deploy:
+	./scripts/aws.sh deploy
+
+aws-check:
+	./scripts/aws.sh check
+
+aws-smoke:
+	./scripts/aws.sh smoke
+
+aws-api-url:
+	./scripts/aws.sh api_url
+
+aws-logs:
+	aws logs tail /ecs/pmap-dev-extraction --since $(or $(SINCE),30m)
+
+tunnel-db:
+	./scripts/aws.sh tunnel db
+
+tunnel-redis:
+	./scripts/aws.sh tunnel redis
+
+aws-db-password:
+	./scripts/aws.sh db_password
