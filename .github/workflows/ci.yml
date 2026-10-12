@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: lint and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: extraction
+          POSTGRES_PASSWORD: extraction
+          POSTGRES_DB: extraction_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U extraction"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      DB_URL: postgresql+asyncpg://extraction:extraction@localhost:5432/extraction_test
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install poetry==2.4.1 && poetry install
+      - run: poetry run ruff check . && poetry run ruff format --check .
+      - run: poetry run alembic upgrade head
+      - run: poetry run pytest
+
+  deploy:
+    name: deploy to AWS (dev)
+    needs: checks
+    # Merges to main only, and only once AWS_DEPLOY_ROLE_ARN is set (infra/RUNBOOK.md).
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    # DEPLOY_RUNNER=self-hosted: the runner on the Mac (label pmap-deploy); otherwise a GitHub machine.
+    runs-on: ${{ vars.DEPLOY_RUNNER == 'self-hosted' && fromJSON('["self-hosted", "pmap-deploy"]') || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-north-1
+      - name: Deploy (image, stop, migrations, start)
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        # CloudFormation updates the stack as the role pmap-dev-cloudformation (infra/github.yaml).
+        run: CFN_ROLE_ARN="${AWS_DEPLOY_ROLE_ARN%%:role/*}:role/pmap-dev-cloudformation" make deploy
+      - name: API answers /health
+        # Port 8000 is open only to AdminCidr: the Mac reaches it, a GitHub machine does not.
+        if: runner.environment == 'self-hosted'
+        run: make aws-smoke
