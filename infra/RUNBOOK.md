@@ -6,10 +6,10 @@ Region `eu-north-1`. Run everything from the repo root. A new, empty account: pr
 ## 1. Deploy main by hand
 
 ```bash
-aws login                     # session lasts 12 h
+aws login
 git checkout main && git pull
 make deploy
-make aws-smoke                # only from AdminCidr (your IP)
+make aws-smoke
 ```
 
 `deploy` = image of HEAD (tag = short commit, built once) → stack `DesiredCount=0` → `alembic upgrade head` → `DesiredCount=1` → all three services running.
@@ -22,8 +22,8 @@ make aws-smoke                # only from AdminCidr (your IP)
 ```bash
 brew install --cask session-manager-plugin     # once
 
-make tunnel-db        # 127.0.0.1:15432, keep the tab open
-make tunnel-redis     # 127.0.0.1:16379, keep the tab open
+make tunnel-db        # 127.0.0.1:15432
+make tunnel-redis     # 127.0.0.1:16379
 make aws-db-password
 
 psql "postgresql://pmap_admin@127.0.0.1:15432/extraction?sslmode=require"
