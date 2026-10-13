@@ -57,3 +57,5 @@ jobs:
           aws-region: eu-north-1
       - name: Deploy (image, stop, migrations, start)
         run: make deploy
+      - name: API answers and requires the key
+        run: make aws-smoke

@@ -162,7 +162,7 @@ class TransactionCleaningService:
             raise
 
         log.info(
-            "cleaning_ok territory_code=%s total=%d excluded=%d",
+            "Cleaned transactions of territory_code=%s total=%d excluded=%d",
             territory_code,
             len(records),
             sum(record.exclusion_reason is not None for record in records),

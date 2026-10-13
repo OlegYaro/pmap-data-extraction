@@ -54,7 +54,10 @@ class DataDownloadService:
         try:
             async with client.stream("GET", url) as response:
                 if response.status_code == httpx.codes.NOT_FOUND:
-                    log.info("download_not_published territory_code=%s", territory_code)
+                    log.info(
+                        "Download stoped, territory code not published territory_code=%s",
+                        territory_code,
+                    )
                     return None
                 if response.status_code != httpx.codes.OK:
                     await response.aread()
@@ -77,10 +80,10 @@ class DataDownloadService:
             part.replace(target)
 
         except httpx.HTTPError as exc:
-            log.exception("download_http_error territory_code=%s url=%s", territory_code, url)
+            log.exception("Download http error territory_code=%s url=%s", territory_code, url)
             raise DownloadError(f"{territory_code}: http error {exc!r}") from exc
         except OSError as exc:
-            log.exception("download_save_error territory_code=%s path=%s", territory_code, part)
+            log.exception("Download save error territory_code=%s path=%s", territory_code, part)
             raise DownloadError(f"{territory_code}: cannot save to {part}") from exc
         finally:
             part.unlink(missing_ok=True)
@@ -100,10 +103,14 @@ class DataDownloadService:
         checksum = await asyncio.to_thread(DataDownloadService.sha256_of, path)
         key = f"raw/{territory_code}/{checksum}/{path.name}"
         if await archive.exists(key):
-            log.info("archive_unchanged territory_code=%s key=%s", territory_code, key)
+            log.info(
+                "Archive of territory code data unchanged territory_code=%s key=%s",
+                territory_code,
+                key,
+            )
             return
         await archive.put_file(key, path)
-        log.info("archive_ok territory_code=%s key=%s", territory_code, key)
+        log.info("Archive data for territory_code=%s key=%s", territory_code, key)
 
     @staticmethod
     async def start_downloading(
@@ -120,7 +127,7 @@ class DataDownloadService:
                 await DataDownloadService.archive_one(territory_code, path)
             else:
                 log.info(
-                    "archive_skipped territory_code=%s path=%s bucket=%s",
+                    "Download archive skipped territory_code=%s path=%s bucket=%s",
                     territory_code,
                     path,
                     settings.S3_BUCKET_RAW,

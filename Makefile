@@ -1,4 +1,4 @@
-.PHONY: up down rebuild logs migrate create_migration downgrade psql lint check test test-db test-one fresh deploy aws-check aws-smoke aws-api-url aws-logs tunnel-db tunnel-redis aws-db-password
+.PHONY: up down rebuild logs migrate create_migration downgrade psql lint check test test-db test-one fresh deploy aws-check aws-smoke aws-api-url aws-api-key aws-logs tunnel-db tunnel-redis aws-db-password
 
 
 # Pull in .env so the credentials live in one place and never reach the repo.
@@ -73,6 +73,9 @@ aws-smoke:
 
 aws-api-url:
 	./scripts/aws.sh api_url
+
+aws-api-key:
+	aws secretsmanager get-secret-value --secret-id pmap/dev/extraction-api-key --query SecretString --output text
 
 aws-logs:
 	aws logs tail /ecs/pmap-dev-extraction --since $(or $(SINCE),30m)
