@@ -79,3 +79,31 @@ class TransactionResponse(BaseModel):
     exclusion_reason: str | None = None
     attributes: dict[str, Any]
     updated_at: datetime
+
+
+class TransactionCreate(BaseModel):
+    """A transaction entered by hand; Backend checks the values before sending them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    external_building_id: str | None = None
+    transaction_date: date | None = None
+    price_premises: float | None = None
+    area_usable: float | None = None
+    rooms: int | None = None
+    floor: int | None = None
+    market_type: str | None = None
+    function: str | None = None
+    address: str | None = None
+    powiat_code: str
+    gmina_code: str | None = None
+    city_name: str | None = None
+    district_name: str | None = None
+    exclusion_reason: str | None = None
+
+
+class TransactionUpdate(TransactionCreate):
+    """Fields to change by hand; accept_registry hands the record back to the registry."""
+
+    powiat_code: str | None = None
+    accept_registry: bool = False

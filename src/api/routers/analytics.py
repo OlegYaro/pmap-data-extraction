@@ -12,7 +12,7 @@ router = APIRouter(tags=["analytics"])
 @router.get("/analytics/stats", status_code=status.HTTP_200_OK)
 async def get_stats(db: DbSession, query: Annotated[StatsQuery, Query()]) -> list[StatsRowResponse]:
     """Count and price per m2 quartiles of clean transactions, one row per group."""
-    rows = await TransactionQueryService.get_stats(db, query)
+    rows = await TransactionQueryService.get_price_stats(db, query)
     return [StatsRowResponse.model_validate(row) for row in rows]
 
 

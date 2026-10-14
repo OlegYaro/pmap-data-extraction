@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from api.schemas.runs import RunStartedResponse, RunStatusResponse
+from api.schemas.runs import RunListItemResponse, RunStartedResponse, RunStatusResponse
 from database.models.task_status import TaskTriggerEnum
 from database.session import DbSession
 from jobs.tasks import orchestrate_run
@@ -23,6 +23,15 @@ async def start_pipeline(territory_code: str | None = Query(default=None)) -> Ru
     )
     log.info("run_requested run_id=%s territory_code=%s", run_id, territory_code)
     return RunStartedResponse(run_id=run_id)
+
+
+@router.get("/runs", status_code=status.HTTP_200_OK)
+async def list_runs(
+    db: DbSession, limit: int = Query(default=20, ge=1, le=100)
+) -> list[RunListItemResponse]:
+    """The latest runs, newest first, with task counts by status."""
+    runs = await ExtractionTaskStateService.list_runs(db, limit)
+    return [RunListItemResponse.model_validate(run) for run in runs]
 
 
 @router.get("/runs/{run_id}", status_code=status.HTTP_200_OK)
