@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +26,34 @@ class TransactionQuery(BaseModel):
     floor_max: int | None = None
     market_type: str | None = None
     function: str | None = None
+    voivodeship_code: str | None = None
+    address: str | None = None
+    exclusion_reason: list[str] | None = None
+
+
+class TransactionListQuery(TransactionQuery):
+    """Filters plus one page; the next page starts after the last row's sort value and id."""
+
+    limit: int = Field(default=100, ge=1, le=1000)
+    sort: Literal[
+        "id",
+        "transaction_date",
+        "price_premises",
+        "area_usable",
+        "rooms",
+        "floor",
+        "market_type",
+        "function",
+        "address",
+        "powiat_code",
+        "gmina_code",
+        "city_name",
+        "district_name",
+        "updated_at",
+    ] = "id"
+    order: Literal["asc", "desc"] = "asc"
+    after_value: str | None = None
+    after_id: int | None = None
 
 
 class TransactionResponse(BaseModel):
@@ -48,5 +76,6 @@ class TransactionResponse(BaseModel):
     gmina_code: str | None = None
     city_name: str | None = None
     district_name: str | None = None
+    exclusion_reason: str | None = None
     attributes: dict[str, Any]
     updated_at: datetime
