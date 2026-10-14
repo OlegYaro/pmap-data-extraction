@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     DOWNLOAD_CONCURRENCY: int = 4
     LOG_LEVEL: str = "INFO"
     S3_BUCKET_RAW: str | None = None
-    S3_REGION: str = "eu-central-1"
+    S3_REGION: str = "eu-north-1"
     # Clients send it in the X-API-Key header. Not set: every endpoint except
     # /health answers 503, so a missing key never leaves the API open.
     API_KEY: SecretStr | None = None

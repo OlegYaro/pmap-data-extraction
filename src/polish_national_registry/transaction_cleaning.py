@@ -131,12 +131,17 @@ class TransactionCleaningService:
         premises_per_deal = Counter(
             item.transaction.get("tran_lokalny_id_iip") for item in assigned
         )
-        return [
+        records = [
             TransactionRecordDTO.from_assigned_transaction_dto(
                 item, premises_per_deal[item.transaction.get("tran_lokalny_id_iip")]
             )
             for item in assigned
+            if item.transaction.get("tran_lokalny_id_iip")
         ]
+        skipped = len(assigned) - len(records)
+        if skipped:
+            log.warning("Cleaning skipped without identifier count=%d", skipped)
+        return records
 
     @staticmethod
     async def start_cleaning(

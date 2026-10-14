@@ -29,3 +29,13 @@ async def test_fail_stores_stage_and_trace(session, persist):
 async def test_get_raises_for_unknown_task(session):
     with pytest.raises(TaskNotFoundError):
         await ExtractionTaskStateService.get(session, 10**6)
+
+
+async def test_done_task_gets_finished_at(session, persist):
+    task = await persist(TaskFactory(status=TaskStatusEnum.staged))
+
+    done = await ExtractionTaskStateService.change_task_status(
+        session, task.id, TaskStatusEnum.done
+    )
+
+    assert done.finished_at is not None
