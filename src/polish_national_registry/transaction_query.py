@@ -5,7 +5,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.schemas.analytics import StatsQuery
 from api.schemas.transactions import TransactionListQuery
+from database.repositories.prefix_map import PrefixMapRepository
 from database.repositories.property_transaction import StagedTransactionRepository
 
 
@@ -36,6 +38,31 @@ class StagedTransactionDTO(BaseModel):
     updated_at: datetime
 
 
+class PriceStatsRowDTO(BaseModel):
+    """Count and price per m2 quartiles of one group."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    group: str | None
+    count: int
+    p25: float | None
+    median: float | None
+    p75: float | None
+
+
+class TerritoryDTO(BaseModel):
+    """One voivodeship, powiat or gmina of prefix_map."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    voivodeship_teryt: str
+    voivodeship_name: str
+    powiat_teryt: str | None
+    powiat_name: str | None
+    gmina_teryt: str | None
+    gmina_name: str | None
+
+
 class TransactionQueryService:
     @staticmethod
     async def get_transactions(
@@ -54,3 +81,19 @@ class TransactionQueryService:
         """One transaction with every field, None when there is no such id."""
         row = await StagedTransactionRepository.get_by_id(session, transaction_id)
         return None if row is None else StagedTransactionDTO.model_validate(row)
+
+    @staticmethod
+    async def get_price_stats(session: AsyncSession, query: StatsQuery) -> list[PriceStatsRowDTO]:
+        """Count and price per m2 quartiles of clean transactions, one row per group."""
+        return [
+            PriceStatsRowDTO.model_validate(row)
+            for row in await StagedTransactionRepository.price_stats(session, query)
+        ]
+
+    @staticmethod
+    async def list_territories(session: AsyncSession) -> list[TerritoryDTO]:
+        """Every voivodeship, powiat and gmina known to prefix_map."""
+        return [
+            TerritoryDTO.model_validate(row)
+            for row in await PrefixMapRepository.list_territories(session)
+        ]

@@ -118,6 +118,31 @@ class StagedTransactionRepository:
         """One transaction by its id or None."""
         return await session.get(PropertyTransaction, transaction_id)
 
+    @staticmethod
+    async def price_stats(session, query):
+        price = PropertyTransaction.price_premises / func.nullif(PropertyTransaction.area_usable, 0)
+        if query.group_by == "none":
+            group = literal(None, String)
+        elif query.group_by == "month":
+            group = func.to_char(PropertyTransaction.transaction_date, "YYYY-MM")
+        else:
+            group = cast(getattr(PropertyTransaction, query.group_by), String)
+
+        stmt = select(
+            group.label("group"),
+            func.count().label("count"),
+            func.percentile_cont(0.25).within_group(price).label("p25"),
+            func.percentile_cont(0.5).within_group(price).label("median"),
+            func.percentile_cont(0.75).within_group(price).label("p75"),
+        )
+
+        clean = query.model_copy(update={"exclusion_reason": ["clean"]})
+        stmt = StagedTransactionRepository.apply_filters(stmt, clean)
+        if query.group_by != "none":
+            stmt = stmt.group_by(group).order_by(group)
+
+        return list((await session.execute(stmt)).mappings())
+
 
 def _after(column, query: TransactionListQuery):
     """Rows after the last row of the previous page; empty sort values come last."""
