@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.schemas.transactions import TransactionQuery
+from api.schemas.transactions import TransactionListQuery
 from database.repositories.property_transaction import StagedTransactionRepository
 
 
@@ -31,6 +31,7 @@ class StagedTransactionDTO(BaseModel):
     gmina_code: str | None = None
     city_name: str | None = None
     district_name: str | None = None
+    exclusion_reason: str | None = None
     attributes: dict[str, Any]
     updated_at: datetime
 
@@ -38,10 +39,18 @@ class StagedTransactionDTO(BaseModel):
 class TransactionQueryService:
     @staticmethod
     async def get_transactions(
-        session: AsyncSession, query: TransactionQuery
+        session: AsyncSession, query: TransactionListQuery
     ) -> list[StagedTransactionDTO]:
-        """All clean transactions matching the query."""
+        """One page of the transactions matching the query."""
         return [
             StagedTransactionDTO.model_validate(row)
             for row in await StagedTransactionRepository.list_by_query(session, query)
         ]
+
+    @staticmethod
+    async def get_transaction_by_id(
+        session: AsyncSession, transaction_id: int
+    ) -> StagedTransactionDTO | None:
+        """One transaction with every field, None when there is no such id."""
+        row = await StagedTransactionRepository.get_by_id(session, transaction_id)
+        return None if row is None else StagedTransactionDTO.model_validate(row)
