@@ -1,4 +1,5 @@
 import uuid
+from collections import Counter
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -39,6 +40,25 @@ class RunSummaryDTO(BaseModel):
     failed: int
     in_progress: int
     failed_tasks: list[DataExtractionTaskDTO]
+    # Rows the run wrote: new, changed, and excluded among them by reason.
+    inserted: int = 0
+    updated: int = 0
+    excluded: dict[str, int] = {}
+
+
+class RunListItemDTO(BaseModel):
+    """One run with its task counts by status."""
+
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    run_id: uuid.UUID
+    trigger: TaskTriggerEnum
+    started_at: datetime
+    finished_at: datetime | None
+    total: int
+    done: int
+    not_published: int
+    failed: int
 
 
 class TaskStatusServiceError(Exception):
@@ -134,6 +154,14 @@ class ExtractionTaskStateService:
         loaded = statuses.count(TaskStatusEnum.done)
         not_published = statuses.count(TaskStatusEnum.not_published)
         failed_tasks = [task for task in tasks if task.status == TaskStatusEnum.failed]
+        inserted, updated, excluded = 0, 0, Counter()
+        for row in await DataExtractionTaskRepository.run_summary(session, run_id):
+            if row["inserted"]:
+                inserted += row["count"]
+            else:
+                updated += row["count"]
+            if row["exclusion_reason"]:
+                excluded[row["exclusion_reason"]] += row["count"]
 
         return RunSummaryDTO(
             run_id=run_id,
@@ -146,4 +174,13 @@ class ExtractionTaskStateService:
             failed=len(failed_tasks),
             in_progress=len(tasks) - loaded - not_published - len(failed_tasks),
             failed_tasks=failed_tasks,
+            inserted=inserted,
+            updated=updated,
+            excluded=dict(excluded),
         )
+
+    @staticmethod
+    async def list_runs(session: AsyncSession, limit: int) -> list[RunListItemDTO]:
+        """The latest runs, newest first."""
+        rows = await DataExtractionTaskRepository.list_runs(session, limit)
+        return [RunListItemDTO.model_validate(row) for row in rows]

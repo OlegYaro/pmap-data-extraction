@@ -43,8 +43,11 @@ class StagedTransactionRepository:
                 "updated_at": func.now(),
                 "delivered_at": None,
             },
-            where=PropertyTransaction.date_source_version.is_distinct_from(
-                new_row.date_source_version
+            where=and_(
+                PropertyTransaction.date_source_version.is_distinct_from(
+                    new_row.date_source_version
+                ),
+                PropertyTransaction.attributes["source"].astext.is_distinct_from("manual"),
             ),
         )
         await session.execute(stmt, [record.model_dump() for record in records])
@@ -142,6 +145,15 @@ class StagedTransactionRepository:
             stmt = stmt.group_by(group).order_by(group)
 
         return list((await session.execute(stmt)).mappings())
+
+    @staticmethod
+    async def create(session: AsyncSession, **values) -> PropertyTransaction:
+        """Add one transaction and return it with its id and defaults."""
+        row = PropertyTransaction(**values)
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        return row
 
 
 def _after(column, query: TransactionListQuery):

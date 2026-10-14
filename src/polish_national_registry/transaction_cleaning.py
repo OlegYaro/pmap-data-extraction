@@ -113,6 +113,9 @@ def _exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) -
     if not source.get("dok_data") or not source.get("lok_id_lokalu"):
         return "missing_fields"
 
+    if assigned.prefix_code is None:
+        return "unassigned"
+
     if assigned.city_name is None and assigned.district_name is None:
         return "no_city_district"
 
