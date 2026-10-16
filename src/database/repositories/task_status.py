@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.models.property_transaction import PropertyTransaction
 from database.models.task_status import DataExtractionTask, TaskStatusEnum, TaskTriggerEnum
 
 
@@ -73,3 +74,42 @@ class DataExtractionTaskRepository:
         stmt = select(DataExtractionTask).where(DataExtractionTask.run_id == run_id)
         result = await session.scalars(stmt)
         return list(result)
+
+    @staticmethod
+    async def run_summary(session: AsyncSession, run_id: uuid.UUID) -> list:
+        """Rows written by a run, by exclusion reason and inserted or updated."""
+        inserted = (PropertyTransaction.created_at == PropertyTransaction.updated_at).label(
+            "inserted"
+        )
+        stmt = (
+            select(PropertyTransaction.exclusion_reason, inserted, func.count().label("count"))
+            .where(PropertyTransaction.run_id == run_id)
+            .group_by(PropertyTransaction.exclusion_reason, inserted)
+        )
+        return list((await session.execute(stmt)).mappings())
+
+    @staticmethod
+    async def list_runs(session: AsyncSession, limit: int) -> list:
+        """The latest runs, newest first, with task counts by status."""
+        task = DataExtractionTask
+
+        def count(status: TaskStatusEnum):
+            return func.count().filter(task.status == status)
+
+        stmt = (
+            select(
+                task.run_id,
+                task.trigger,
+                func.min(task.started_at).label("started_at"),
+                func.max(task.finished_at).label("finished_at"),
+                func.count().label("total"),
+                count(TaskStatusEnum.done).label("done"),
+                count(TaskStatusEnum.not_published).label("not_published"),
+                count(TaskStatusEnum.failed).label("failed"),
+            )
+            .where(task.run_id.is_not(None))
+            .group_by(task.run_id, task.trigger)
+            .order_by(func.min(task.started_at).desc())
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).mappings())

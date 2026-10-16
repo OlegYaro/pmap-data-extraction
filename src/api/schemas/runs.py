@@ -38,3 +38,19 @@ class RunStatusResponse(BaseModel):
     failed: int
     in_progress: int
     failed_tasks: list[FailedTaskResponse]
+    inserted: int
+    updated: int
+    excluded: dict[str, int]
+
+
+class RunListItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: uuid.UUID
+    trigger: TaskTriggerEnum
+    started_at: datetime
+    finished_at: datetime | None = None
+    total: int
+    done: int
+    not_published: int
+    failed: int
