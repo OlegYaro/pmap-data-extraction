@@ -30,7 +30,7 @@ class PropertyTransaction(Base):
     function: Mapped[str | None] = mapped_column(String(64))
     address: Mapped[str | None] = mapped_column(Text)
 
-    powiat_code: Mapped[str] = mapped_column(String(4))
+    powiat_code: Mapped[str] = mapped_column(String(4), index=True)
     gmina_code: Mapped[str | None] = mapped_column(String(7))
     city_name: Mapped[str | None] = mapped_column(Text)
     district_name: Mapped[str | None] = mapped_column(Text)

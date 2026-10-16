@@ -70,7 +70,7 @@ class TransactionFilterService:
             raise
 
         log.info(
-            "filter_ok territory_code=%s total=%d new=%d",
+            "Filtered transactions of territory_code=%s total=%d new=%d",
             territory_code,
             len(transactions),
             len(new_transactions),

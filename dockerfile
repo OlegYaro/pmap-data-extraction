@@ -12,4 +12,4 @@ COPY scripts ./scripts
 COPY alembic.ini ./
 RUN poetry install --only-root
 
-CMD ["python", "-c", "import extraction; print('ok')"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

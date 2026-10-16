@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.main import app
@@ -9,6 +10,14 @@ from core import settings
 from database.session import SessionFactory, db_session, engine
 
 assert str(settings.DB_URL).endswith("_test"), "Use `make test`."
+
+TEST_API_KEY = "test-api-key"
+
+
+@pytest.fixture(autouse=True)
+def api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API runs with a known key in every test; `client` sends it."""
+    monkeypatch.setattr(settings, "API_KEY", SecretStr(TEST_API_KEY))
 
 
 @pytest.fixture
@@ -28,7 +37,11 @@ async def session() -> AsyncGenerator[AsyncSession]:
 async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient]:
     """HTTP client that calls the app in-process, on the test's session."""
     app.dependency_overrides[db_session] = lambda: session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"X-API-Key": TEST_API_KEY},
+    ) as ac:
         yield ac
     app.dependency_overrides.clear()
 

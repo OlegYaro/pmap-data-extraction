@@ -78,10 +78,12 @@ smoke() {
 	local url
 	url=$(api_url)
 	for _ in $(seq 12); do
-		curl -fsS --max-time 5 "$url/health" && { echo; echo "OK: $url"; return; }
+		curl -fsS --max-time 5 "$url/health" >/dev/null && break
 		sleep 5
 	done
-	die "$url/health does not answer"
+	curl -fsS --max-time 5 "$url/health" >/dev/null || die "$url/health does not answer"
+	[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$url/transactions")" = 401 ] || die "API answers without the key"
+	echo "OK: $url"
 }
 
 tunnel() {

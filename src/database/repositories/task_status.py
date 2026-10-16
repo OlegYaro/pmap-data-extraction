@@ -53,10 +53,13 @@ class DataExtractionTaskRepository:
     ) -> DataExtractionTask:
         """Update the status of a task and return the updated task."""
 
+        values = {"status": status}
+        if status in (TaskStatusEnum.done, TaskStatusEnum.not_published):
+            values["finished_at"] = func.now()
         stmt = (
             update(DataExtractionTask)
             .where(DataExtractionTask.id == task_id)
-            .values(status=status)
+            .values(**values)
             .returning(DataExtractionTask)
         )
 
