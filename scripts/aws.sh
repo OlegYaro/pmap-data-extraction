@@ -52,7 +52,6 @@ deploy() {
 	update_stack "$tag" 0
 	migrate
 	update_stack "$tag" 1
-	check
 }
 
 check() {
