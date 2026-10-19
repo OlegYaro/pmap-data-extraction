@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import settings
+from core.timing import timed
 from database.repositories.prefix_map import PrefixMapRepository
 from polish_national_registry.data_download import DataDownloadService
 from polish_national_registry.status_service import ExtractionTaskStateService
@@ -26,26 +27,32 @@ async def run_territory(session: AsyncSession, task_id: int) -> None:
     task = await ExtractionTaskStateService.get(session, task_id)
     target_dir = settings.DOWNLOAD_DIR / task.started_at.strftime("%Y-%m-%d")
     target_dir.mkdir(parents=True, exist_ok=True)
+    ctx = {"task_id": task_id, "territory_code": task.territory_code}
 
     log.info("pipeline_started task_id=%s territory_code=%s", task_id, task.territory_code)
-    path = await DataDownloadService.start_downloading(
-        session, task_id, task.territory_code, target_dir
-    )
-    if path is None:
-        return
-    try:
-        transactions = await TransactionFilterService.start_filtering(
-            session, task_id, task.territory_code, path
-        )
-    finally:
-        # The local copy is not needed once it has been read; on the server the file is in S3.
-        path.unlink(missing_ok=True)
-    assigned = await TerritoryAssignmentService.assign_territory(
-        session, task_id, task.territory_code, transactions
-    )
-    records = await TransactionCleaningService.start_cleaning(
-        session, task_id, task.territory_code, assigned
-    )
-    await TransactionLoadService.start_loading(
-        session, task_id, task.territory_code, task.run_id, records
-    )
+    with timed("pipeline", **ctx):
+        with timed("download", **ctx):
+            path = await DataDownloadService.start_downloading(
+                session, task_id, task.territory_code, target_dir
+            )
+        if path is None:
+            return
+        try:
+            with timed("filter", **ctx):
+                transactions = await TransactionFilterService.start_filtering(
+                    session, task_id, task.territory_code, path
+                )
+        finally:
+            path.unlink(missing_ok=True)
+        with timed("assign", **ctx):
+            assigned = await TerritoryAssignmentService.assign_territory(
+                session, task_id, task.territory_code, transactions
+            )
+        with timed("clean", **ctx):
+            records = await TransactionCleaningService.start_cleaning(
+                session, task_id, task.territory_code, assigned
+            )
+        with timed("load", **ctx):
+            await TransactionLoadService.start_loading(
+                session, task_id, task.territory_code, task.run_id, records
+            )

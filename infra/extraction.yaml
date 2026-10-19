@@ -98,6 +98,16 @@ Resources:
           RawBucketName:
             Fn::ImportValue: !Sub "${Project}-${Env}-RawBucketName"
 
+  # X-API-Key of the API; the whole secret string is the key (make aws-api-key).
+  ApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${Project}/${Env}/extraction-api-key"
+      Description: X-API-Key of the extraction API
+      GenerateSecretString:
+        PasswordLength: 40
+        ExcludePunctuation: true
+
   # Used by ECS itself: pull the image, write logs, read the secret.
   ExecutionRole:
     Type: AWS::IAM::Role
@@ -118,7 +128,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref EnvSecret
+                Resource:
+                  - !Ref EnvSecret
+                  - !Ref ApiKeySecret
 
   # Used by the application code: boto3 gets S3 access from this role.
   TaskRole:
@@ -192,6 +204,8 @@ Resources:
               ValueFrom: !Sub "${EnvSecret}:S3_BUCKET_RAW::"
             - Name: S3_REGION
               ValueFrom: !Sub "${EnvSecret}:S3_REGION::"
+            - Name: API_KEY
+              ValueFrom: !Ref ApiKeySecret
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -316,6 +330,21 @@ Resources:
             - Fn::ImportValue: !Sub "${Project}-${Env}-PublicSubnets"
           SecurityGroups:
             - Fn::ImportValue: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+
+  # Port 8000 for API users (the manager): every endpoint except /health needs
+  # the key. Created after ApiService, so the API without the key check is
+  # never reachable from the internet.
+  ApiIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: ApiService
+    Properties:
+      GroupId:
+        Fn::ImportValue: !Sub "${Project}-${Env}-ExtractionSecurityGroup"
+      Description: Extraction API, protected by X-API-Key
+      IpProtocol: tcp
+      FromPort: 8000
+      ToPort: 8000
+      CidrIp: 0.0.0.0/0
 
   WorkerService:
     Type: AWS::ECS::Service

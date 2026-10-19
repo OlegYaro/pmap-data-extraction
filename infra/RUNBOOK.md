@@ -16,6 +16,26 @@ make aws-smoke
 
 - The powiat in progress is lost; the queue in Redis stays and continues after the start.
 - Failed migration → services stay stopped: `make aws-logs SINCE=30m`, fix, deploy again.
+- `aws-smoke` = `/health` 200 and a request without the key 401.
+
+## 1.1 API access
+
+Port 8000 is open to everyone; every endpoint except `/health` needs the `X-API-Key` header.
+
+```bash
+make aws-api-url      # http://<ip>:8000, changes after every deploy
+make aws-api-key      # give it to API users over a private channel
+```
+
+- Swagger: `<url>/docs` → Authorize → key.
+- curl: `curl -H "X-API-Key: <key>" "<url>/transactions?powiat_code=0264"`
+- Locally: `API_KEY=local-dev-key` in `.env`, otherwise the API answers 503.
+- New key (the container reads it only at start):
+
+  ```bash
+  aws secretsmanager put-secret-value --secret-id pmap/dev/extraction-api-key --secret-string "$(openssl rand -hex 20)"
+  aws ecs update-service --cluster pmap-dev-extraction --service api --force-new-deployment
+  ```
 
 ## 2. Database and Redis
 
@@ -37,7 +57,7 @@ The tunnels go through the api container: they stop on every deploy.
 
 ```
 PR        -> checks: ruff, alembic upgrade head, pytest on Postgres
-push main -> checks -> deploy (GitHub machine): make deploy
+push main -> checks -> deploy (GitHub machine): make deploy -> make aws-smoke
 ```
 
 GitHub signs in to AWS as the IAM user `pmap-dev-github-deploy` with access keys from GitHub Secrets
@@ -67,6 +87,7 @@ Run: Actions → ci → Run workflow → `main`, or merge a PR into `main`.
 | deploy job skipped | not `main`, or a pull request |
 | `Credentials could not be loaded` | secrets missing or misspelled |
 | `InvalidClientTokenId` / `SignatureDoesNotMatch` | wrong or deleted key: create a new one, update both secrets |
+| `API answers without the key` | the api runs an image without the key check |
 
 ## 4. When something fails
 
@@ -82,4 +103,4 @@ aws cloudformation describe-stack-events --stack-name pmap-dev-extraction \
 | `CannotPullContainerError` | no image with this tag in ECR |
 | `exec format error` | image not built for `linux/amd64` |
 | exit code 137 | out of memory: stack parameter `WorkerMemory=4096` |
-| API not reachable | home IP changed: redeploy `pmap-dev-network` with the new `AdminCidr` |
+| every request 503 | `API_KEY` missing: secret not passed to the container, or not in local `.env` |

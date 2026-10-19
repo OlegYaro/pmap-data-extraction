@@ -40,7 +40,7 @@ class TransactionLoadService:
             raise
 
         log.info(
-            "loading_ok territory_code=%s received=%d saved=%d",
+            "Loaded transactions for territory_code=%s received=%d saved=%d",
             territory_code,
             len(records),
             len(unique),
