@@ -35,3 +35,25 @@ class PrefixMapRepository:
             .order_by(PrefixMap.powiat_teryt)
         )
         return list(result)
+
+    @staticmethod
+    async def list_territories(session: AsyncSession) -> list:
+        """Distinct voivodeship, powiat and gmina codes with names."""
+        columns = (
+            PrefixMap.voivodeship_teryt,
+            PrefixMap.voivodeship_name,
+            PrefixMap.powiat_teryt,
+            PrefixMap.powiat_name,
+            PrefixMap.gmina_teryt,
+            PrefixMap.gmina_name,
+        )
+        stmt = (
+            select(*columns)
+            .distinct()
+            .order_by(
+                PrefixMap.voivodeship_teryt,
+                PrefixMap.powiat_teryt.nulls_first(),
+                PrefixMap.gmina_teryt.nulls_first(),
+            )
+        )
+        return list((await session.execute(stmt)).mappings())
