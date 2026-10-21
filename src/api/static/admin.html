@@ -189,7 +189,6 @@ document.querySelectorAll("nav button").forEach((button) => {
   };
 });
 
-/* Runs */
 
 async function loadRuns() {
   try {
@@ -259,7 +258,6 @@ $("run-start").onclick = async () => {
 };
 $("runs-refresh").onclick = loadRuns;
 
-/* Transactions */
 
 let lastPage = [];
 
@@ -313,7 +311,6 @@ $("tx-next").onclick = () => {
   loadTransactions({ id: last.id, value: sort === "id" ? null : last[sort] });
 };
 
-/* Analytics */
 
 $("an-form").onsubmit = async (e) => {
   e.preventDefault();
