@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PMAP admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css">
+  <style>
+    body { font-size: 15px; }
+    main { max-width: 1400px; }
+    nav button { margin-right: .5rem; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+    .row label { flex: 1 1 140px; margin: 0; }
+    .row button { width: auto; margin: 0; }
+    table { width: 100%; font-size: 14px; }
+    tbody tr.click { cursor: pointer; }
+    tbody tr.click:hover { background: var(--pico-secondary-background); color: var(--pico-secondary-inverse); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .badge { font-size: 12px; padding: 0 .4rem; border-radius: 4px; background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+    .bar { height: 8px; background: var(--pico-primary-background); border-radius: 4px; }
+    .counters { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem; }
+    .counters div { border: 1px solid var(--pico-muted-border-color); border-radius: 6px; padding: .4rem .6rem; }
+    .counters b { display: block; font-size: 20px; }
+    #status { min-height: 1.5rem; }
+    #status.error { color: var(--pico-del-color); }
+    pre { white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
+  </style>
+</head>
+<body>
+<main class="container">
+  <h2>PMAP · Extraction admin</h2>
+
+  <div class="row">
+    <label>API key<input id="key" type="password" placeholder="X-API-Key" autocomplete="off"></label>
+    <button id="save-key" class="secondary">Save</button>
+  </div>
+  <p id="status"></p>
+
+  <nav>
+    <button data-tab="runs">Runs</button>
+    <button data-tab="transactions" class="outline">Transactions</button>
+    <button data-tab="analytics" class="outline">Analytics</button>
+  </nav>
+
+  <section id="runs" class="tab active">
+    <h3>Start a run</h3>
+    <div class="row">
+      <label>Powiat code (empty = all of Poland)<input id="run-powiat" placeholder="0264"></label>
+      <button id="run-start">Start</button>
+    </div>
+
+    <article id="run-detail" hidden>
+      <header><b>Run <span id="run-id"></span></b> <span id="run-started"></span> <span id="run-state"></span></header>
+      <div id="run-counters" class="counters"></div>
+      <div id="run-excluded"></div>
+      <div id="run-failed"></div>
+    </article>
+
+    <h3>Latest runs</h3>
+    <button id="runs-refresh" class="secondary">Refresh</button>
+    <table>
+      <thead><tr><th>Started</th><th>Trigger</th><th class="num">Powiats</th><th class="num">Done</th>
+        <th class="num">Not published</th><th class="num">Failed</th><th>Finished</th></tr></thead>
+      <tbody id="runs-body"></tbody>
+    </table>
+  </section>
+
+  <section id="transactions" class="tab">
+    <h3>Transactions</h3>
+    <form id="tx-form" class="row">
+      <label>Powiat<input name="powiat_code" placeholder="0264"></label>
+      <label>City<input name="city_name"></label>
+      <label>District<input name="district_name"></label>
+      <label>From<input name="date_from" type="date"></label>
+      <label>To<input name="date_to" type="date"></label>
+      <label>Rooms<input name="rooms" type="number" min="1"></label>
+      <label>Market type<input name="market_type"></label>
+      <label>Rows<select name="exclusion_reason"><option value="">all</option>
+        <option value="clean">clean only</option></select></label>
+      <label>Sort<select name="sort"><option value="transaction_date">date</option>
+        <option value="price_premises">price</option><option value="area_usable">area</option>
+        <option value="id">id</option></select></label>
+      <label>Order<select name="order"><option value="desc">desc</option><option value="asc">asc</option></select></label>
+      <button type="submit">Search</button>
+    </form>
+    <table>
+      <thead><tr><th>Id</th><th>Date</th><th class="num">Price</th><th class="num">Area</th>
+        <th class="num">Price/m²</th><th class="num">Rooms</th><th class="num">Floor</th><th>Market</th>
+        <th>City</th><th>District</th><th>Excluded</th></tr></thead>
+      <tbody id="tx-body"></tbody>
+    </table>
+    <div class="row">
+      <button id="tx-first" class="secondary">First page</button>
+      <button id="tx-next">Next page</button>
+    </div>
+
+    <article id="tx-card" hidden>
+      <header><b>Transaction <span id="tx-card-id"></span></b></header>
+      <table><tbody id="tx-card-body"></tbody></table>
+      <details><summary>attributes</summary><pre id="tx-card-attrs"></pre></details>
+    </article>
+  </section>
+
+  <section id="analytics" class="tab">
+    <h3>Price per m², clean transactions</h3>
+    <form id="an-form" class="row">
+      <label>Powiat<input name="powiat_code" placeholder="0264"></label>
+      <label>City<input name="city_name"></label>
+      <label>From<input name="date_from" type="date"></label>
+      <label>To<input name="date_to" type="date"></label>
+      <label>Market type<input name="market_type"></label>
+      <label>Group by<select name="group_by"><option value="month">month</option>
+        <option value="rooms">rooms</option><option value="floor">floor</option>
+        <option value="district_name">district</option><option value="city_name">city</option>
+        <option value="powiat_code">powiat</option><option value="none">none</option></select></label>
+      <button type="submit">Show</button>
+    </form>
+    <table>
+      <thead><tr><th>Group</th><th class="num">Count</th><th class="num">P25</th>
+        <th class="num">Median</th><th class="num">P75</th><th style="width:30%"></th></tr></thead>
+      <tbody id="an-body"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const keyInput = $("key");
+const POLL_MS = 3000;
+let pollTimer = null;
+
+function storedKey() {
+  try { return sessionStorage.getItem("pmap-key") || ""; } catch { return ""; }
+}
+keyInput.value = storedKey();
+$("save-key").onclick = () => {
+  try { sessionStorage.setItem("pmap-key", keyInput.value.trim()); } catch {}
+  loadRuns();
+};
+
+function setStatus(text, error = false) {
+  $("status").textContent = text;
+  $("status").className = error ? "error" : "";
+}
+
+async function api(method, path, params) {
+  const query = params ? "?" + new URLSearchParams(params) : "";
+  const response = await fetch(path + query, {
+    method,
+    headers: { "X-API-Key": keyInput.value.trim() },
+  });
+  if (response.status === 401) throw new Error("Wrong or missing API key");
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw Object.assign(new Error(JSON.stringify(body.detail ?? response.statusText)), { status: response.status });
+  }
+  return response.json();
+}
+
+function cell(value, cls) {
+  const td = document.createElement("td");
+  td.textContent = value ?? "";
+  if (cls) td.className = cls;
+  return td;
+}
+
+function row(values, onClick) {
+  const tr = document.createElement("tr");
+  values.forEach((v) => tr.append(v instanceof Node ? v : cell(v)));
+  if (onClick) { tr.className = "click"; tr.onclick = onClick; }
+  return tr;
+}
+
+const fmt = (n, digits = 0) => (n == null ? "" : Number(n).toLocaleString("en", { maximumFractionDigits: digits }));
+const time = (s) => (s ? new Date(s).toLocaleString() : "");
+
+function formParams(form) {
+  const params = new URLSearchParams();
+  for (const [name, value] of new FormData(form)) if (value !== "") params.append(name, value);
+  return params;
+}
+
+document.querySelectorAll("nav button").forEach((button) => {
+  button.onclick = () => {
+    document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("outline", b !== button));
+    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === button.dataset.tab));
+  };
+});
+
+
+async function loadRuns() {
+  try {
+    const runs = await api("GET", "/runs", { limit: 20 });
+    $("runs-body").replaceChildren(...runs.map((r) => row([
+      time(r.started_at), r.trigger, cell(r.total, "num"), cell(r.done, "num"),
+      cell(r.not_published, "num"), cell(r.failed, "num"), time(r.finished_at),
+    ], () => showRun(r.run_id))));
+    setStatus(`${runs.length} runs`);
+  } catch (e) { setStatus(e.message, true); }
+}
+
+function showRun(runId) {
+  clearTimeout(pollTimer);
+  $("run-detail").hidden = false;
+  $("run-id").textContent = runId;
+  pollRun(runId);
+}
+
+async function pollRun(runId) {
+  try {
+    const run = await api("GET", `/runs/${runId}`);
+    const counters = [
+      ["powiats", run.total], ["downloaded", run.downloaded], ["assigned", run.assigned],
+      ["cleaned", run.cleaned], ["loaded", run.loaded], ["not published", run.not_published],
+      ["failed", run.failed], ["in progress", run.in_progress], ["rows inserted", run.inserted],
+      ["rows updated", run.updated],
+    ];
+    $("run-counters").replaceChildren(...counters.map(([label, value]) => {
+      const div = document.createElement("div");
+      const b = document.createElement("b");
+      b.textContent = fmt(value);
+      div.append(b, label);
+      return div;
+    }));
+    const excluded = Object.entries(run.excluded).map(([reason, n]) => `${reason}: ${fmt(n)}`).join(", ");
+    $("run-excluded").textContent = excluded ? `Excluded rows: ${excluded}` : "";
+    $("run-failed").replaceChildren(...run.failed_tasks.map((t) => {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Powiat ${t.territory_code} failed at ${t.failed_stage ?? "?"}`;
+      const pre = document.createElement("pre");
+      pre.textContent = t.error_trace ?? "";
+      details.append(summary, pre);
+      return details;
+    }));
+    $("run-started").textContent = run.started_at ? `· started ${time(run.started_at)}` : "";
+    const running = run.in_progress > 0;
+    $("run-state").textContent = running ? "· running, refreshes every 3 s" : "· finished";
+    if (running) pollTimer = setTimeout(() => pollRun(runId), POLL_MS);
+    else loadRuns();
+  } catch (e) {
+    if (e.status === 404) {
+      $("run-started").textContent = "";
+      $("run-state").textContent = "· queued, waiting for the worker";
+      $("run-counters").replaceChildren();
+      pollTimer = setTimeout(() => pollRun(runId), POLL_MS);
+    } else setStatus(e.message, true);
+  }
+}
+
+$("run-start").onclick = async () => {
+  const powiat = $("run-powiat").value.trim();
+  try {
+    const { run_id } = await api("POST", "/runs", powiat ? { territory_code: powiat } : null);
+    setStatus(`Run ${run_id} started`);
+    showRun(run_id);
+  } catch (e) { setStatus(e.message, true); }
+};
+$("runs-refresh").onclick = loadRuns;
+
+
+let lastPage = [];
+
+async function loadTransactions(cursor) {
+  const params = formParams($("tx-form"));
+  params.set("limit", 50);
+  if (cursor) {
+    params.set("after_id", cursor.id);
+    if (cursor.value != null) params.set("after_value", cursor.value);
+  }
+  try {
+    lastPage = await api("GET", "/transactions", params);
+    $("tx-body").replaceChildren(...lastPage.map((t) => {
+      const perM2 = t.price_premises && t.area_usable ? t.price_premises / t.area_usable : null;
+      const id = cell(t.id);
+      if (t.attributes?.source === "manual") {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "manual";
+        id.append(" ", badge);
+      }
+      return row([
+        id, t.transaction_date, cell(fmt(t.price_premises), "num"), cell(fmt(t.area_usable, 2), "num"),
+        cell(fmt(perM2), "num"), cell(t.rooms, "num"), cell(t.floor, "num"), t.market_type,
+        t.city_name, t.district_name, t.exclusion_reason,
+      ], () => showTransaction(t.id));
+    }));
+    $("tx-next").disabled = lastPage.length < 50;
+    setStatus(`${lastPage.length} transactions on this page`);
+  } catch (e) { setStatus(e.message, true); }
+}
+
+async function showTransaction(id) {
+  try {
+    const t = await api("GET", `/transactions/${id}`);
+    $("tx-card").hidden = false;
+    $("tx-card-id").textContent = t.id;
+    const { attributes, ...fields } = t;
+    $("tx-card-body").replaceChildren(...Object.entries(fields).map(([k, v]) => row([k, v])));
+    $("tx-card-attrs").textContent = JSON.stringify(attributes, null, 2);
+    $("tx-card").scrollIntoView({ behavior: "smooth" });
+  } catch (e) { setStatus(e.message, true); }
+}
+
+$("tx-form").onsubmit = (e) => { e.preventDefault(); loadTransactions(); };
+$("tx-first").onclick = () => loadTransactions();
+$("tx-next").onclick = () => {
+  const last = lastPage.at(-1);
+  if (!last) return;
+  const sort = $("tx-form").elements.sort.value;
+  loadTransactions({ id: last.id, value: sort === "id" ? null : last[sort] });
+};
+
+
+$("an-form").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const rows = await api("GET", "/analytics/stats", formParams($("an-form")));
+    const max = Math.max(...rows.map((r) => r.median ?? 0), 1);
+    $("an-body").replaceChildren(...rows.map((r) => {
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      bar.style.width = `${((r.median ?? 0) / max) * 100}%`;
+      const barCell = document.createElement("td");
+      barCell.append(bar);
+      return row([
+        r.group ?? "all", cell(fmt(r.count), "num"), cell(fmt(r.p25), "num"),
+        cell(fmt(r.median), "num"), cell(fmt(r.p75), "num"), barCell,
+      ]);
+    }));
+    setStatus(`${rows.length} groups`);
+  } catch (e) { setStatus(e.message, true); }
+};
+
+if (keyInput.value) loadRuns();
+</script>
+</body>
+</html>
