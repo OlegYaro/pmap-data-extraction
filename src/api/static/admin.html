@@ -52,7 +52,7 @@
     </div>
 
     <article id="run-detail" hidden>
-      <header><b>Run <span id="run-id"></span></b> <span id="run-state"></span></header>
+      <header><b>Run <span id="run-id"></span></b> <span id="run-started"></span> <span id="run-state"></span></header>
       <div id="run-counters" class="counters"></div>
       <div id="run-excluded"></div>
       <div id="run-failed"></div>
@@ -235,12 +235,14 @@ async function pollRun(runId) {
       details.append(summary, pre);
       return details;
     }));
+    $("run-started").textContent = run.started_at ? `· started ${time(run.started_at)}` : "";
     const running = run.in_progress > 0;
     $("run-state").textContent = running ? "· running, refreshes every 3 s" : "· finished";
     if (running) pollTimer = setTimeout(() => pollRun(runId), POLL_MS);
     else loadRuns();
   } catch (e) {
     if (e.status === 404) {
+      $("run-started").textContent = "";
       $("run-state").textContent = "· queued, waiting for the worker";
       $("run-counters").replaceChildren();
       pollTimer = setTimeout(() => pollRun(runId), POLL_MS);

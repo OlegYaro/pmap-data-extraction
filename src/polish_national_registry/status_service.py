@@ -31,6 +31,7 @@ class RunSummaryDTO(BaseModel):
     """Counters of one run and the failed powiats with their traces."""
 
     run_id: uuid.UUID
+    started_at: datetime | None = None
     total: int
     downloaded: int
     assigned: int
@@ -165,6 +166,7 @@ class ExtractionTaskStateService:
 
         return RunSummaryDTO(
             run_id=run_id,
+            started_at=min((task.started_at for task in tasks), default=None),
             total=len(tasks),
             downloaded=downloaded,
             assigned=assigned,

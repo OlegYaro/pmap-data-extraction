@@ -31,6 +31,7 @@ ATTRIBUTES = (
 # ask
 CLEAN_PRICE_PER_SQM_MIN = None
 CLEAN_PRICE_PER_SQM_MAX = None
+MAX_AREA_M2 = 10_000
 
 
 class TransactionRecordDTO(BaseModel):
@@ -62,13 +63,18 @@ class TransactionRecordDTO(BaseModel):
     ) -> Self:
         """Take the needed fields of one row and mark it."""
         source = assigned.transaction
+        area = source.get("lok_pow_uzyt")
+        attributes = {key: source.get(key) for key in ATTRIBUTES}
+        if area is not None and area > MAX_AREA_M2:
+            attributes["lok_pow_uzyt_raw"] = area
+            area = None
         return cls(
             external_transaction_identifier=source.get("tran_lokalny_id_iip"),
             external_building_id=source.get("lok_id_lokalu"),
             date_source_version=source.get("tran_wersja_id"),
             transaction_date=to_date(source.get("dok_data")),
             price_premises=source.get("lok_cena_brutto"),
-            area_usable=source.get("lok_pow_uzyt"),
+            area_usable=area,
             rooms=source.get("lok_liczba_izb"),
             floor=source.get("lok_nr_kond"),
             market_type=source.get("tran_rodzaj_rynku"),
@@ -79,7 +85,7 @@ class TransactionRecordDTO(BaseModel):
             city_name=assigned.city_name,
             district_name=assigned.district_name,
             exclusion_reason=_exclusion_reason(assigned, premises_in_deal),
-            attributes={key: source.get(key) for key in ATTRIBUTES},
+            attributes=attributes,
         )
 
 
@@ -109,6 +115,9 @@ def _exclusion_reason(assigned: AssignedTransactionDTO, premises_in_deal: int) -
 
     if price <= 0 or area <= 0:
         return "missing_fields"
+
+    if area > MAX_AREA_M2:
+        return "implausible_area"
 
     if not source.get("dok_data") or not source.get("lok_id_lokalu"):
         return "missing_fields"

@@ -29,6 +29,7 @@ class RunStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     run_id: uuid.UUID
+    started_at: datetime | None = None
     total: int
     downloaded: int
     assigned: int
