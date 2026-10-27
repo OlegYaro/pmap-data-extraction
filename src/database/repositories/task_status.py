@@ -1,10 +1,15 @@
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.property_transaction import PropertyTransaction
 from database.models.task_status import DataExtractionTask, TaskStatusEnum, TaskTriggerEnum
+
+RUN_START_LOCK_KEY = 7_400_001
+# Unfinished tasks older than this belong to a dead run and don't block new ones.
+RUN_TIMEOUT = timedelta(hours=24)
 
 
 class DataExtractionTaskRepository:
@@ -113,3 +118,17 @@ class DataExtractionTaskRepository:
             .limit(limit)
         )
         return list((await session.execute(stmt)).mappings())
+
+    @staticmethod
+    async def get_active_run_id(session: AsyncSession) -> uuid.UUID | None:
+        """Lock run starts until the transaction ends and return the unfinished run, if any."""
+        await session.execute(select(func.pg_advisory_xact_lock(RUN_START_LOCK_KEY)))
+        stmt = (
+            select(DataExtractionTask.run_id)
+            .where(
+                DataExtractionTask.finished_at.is_(None),
+                DataExtractionTask.started_at > func.now() - RUN_TIMEOUT,
+            )
+            .limit(1)
+        )
+        return await session.scalar(stmt)
