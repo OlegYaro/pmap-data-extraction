@@ -2,7 +2,18 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Date, DateTime, Numeric, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,7 +41,7 @@ class PropertyTransaction(Base):
     function: Mapped[str | None] = mapped_column(String(64))
     address: Mapped[str | None] = mapped_column(Text)
 
-    powiat_code: Mapped[str] = mapped_column(String(4), index=True)
+    powiat_code: Mapped[str] = mapped_column(String(4))
     gmina_code: Mapped[str | None] = mapped_column(String(7))
     city_name: Mapped[str | None] = mapped_column(Text)
     district_name: Mapped[str | None] = mapped_column(Text)
@@ -50,3 +61,69 @@ class PropertyTransaction(Base):
             postgresql_nulls_not_distinct=True,
         ),
     )
+
+
+# Indexes for the searches of GET /transactions and GET /analytics/*. Kept in step with the
+# migration 20261107_3f1c9a7be2d4. Orders are written as the queries ask for them: `DESC NULLS
+# LAST` is not the default of a btree, so each direction needs its own index.
+_DATE_DESC = (
+    PropertyTransaction.transaction_date.desc().nulls_last(),
+    PropertyTransaction.id.desc(),
+)
+_DATE_ASC = (PropertyTransaction.transaction_date.asc().nulls_last(), PropertyTransaction.id.asc())
+
+# Default sort of the list (newest first) and the opposite direction, with or without filters
+# that match many rows (price, area, rooms, function, dates...): the scan stops after one page.
+Index("ix_pt_date_desc", *_DATE_DESC)
+Index("ix_pt_date_asc", *_DATE_ASC)
+Index(
+    "ix_pt_price_desc",
+    PropertyTransaction.price_premises.desc().nulls_last(),
+    PropertyTransaction.id.desc(),
+)
+Index(
+    "ix_pt_price_asc",
+    PropertyTransaction.price_premises.asc().nulls_last(),
+    PropertyTransaction.id.asc(),
+)
+# Territory filters (exact match) that keep the date order of the list. powiat_code leads, so the
+# prefix range of a voivodeship and the equality of a powiat both use it.
+Index("ix_pt_powiat_date", PropertyTransaction.powiat_code, *_DATE_DESC)
+# Export and `sort=id`: by id inside a powiat, also when the powiat has no rows at all.
+Index("ix_pt_powiat_id", PropertyTransaction.powiat_code, PropertyTransaction.id)
+Index("ix_pt_gmina_date", PropertyTransaction.gmina_code, *_DATE_DESC)
+Index("ix_pt_city_date", PropertyTransaction.city_name, *_DATE_DESC)
+Index("ix_pt_district_date", PropertyTransaction.district_name, *_DATE_DESC)
+# ILIKE '%text%' on the address.
+Index(
+    "ix_pt_address_trgm",
+    PropertyTransaction.address,
+    postgresql_using="gin",
+    postgresql_ops={"address": "gin_trgm_ops"},
+)
+# Analytics read clean rows only and need just the price and the area: index-only scans.
+_CLEAN = text("exclusion_reason IS NULL")
+Index(
+    "ix_pt_clean_powiat_date",
+    PropertyTransaction.powiat_code,
+    PropertyTransaction.transaction_date,
+    postgresql_include=["price_premises", "area_usable"],
+    postgresql_where=_CLEAN,
+)
+Index(
+    "ix_pt_clean_date",
+    PropertyTransaction.transaction_date,
+    postgresql_include=[
+        "price_premises",
+        "area_usable",
+        "powiat_code",
+        "gmina_code",
+        "city_name",
+        "district_name",
+        "rooms",
+        "floor",
+        "function",
+        "market_type",
+    ],
+    postgresql_where=_CLEAN,
+)

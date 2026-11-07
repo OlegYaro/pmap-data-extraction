@@ -4,44 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PMAP admin</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css">
   <style>
-    body { font-size: 15px; }
-    main { max-width: 1400px; }
-    nav button { margin-right: .5rem; }
+    /* No look of its own: only what the page needs to work. */
     .tab { display: none; }
     .tab.active { display: block; }
-    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
-    .row label { flex: 1 1 140px; margin: 0; }
-    .row button { width: auto; margin: 0; }
-    table { width: 100%; font-size: 14px; }
+    nav button[aria-current="true"] { font-weight: bold; }
     tbody tr.click { cursor: pointer; }
-    tbody tr.click:hover { background: var(--pico-secondary-background); color: var(--pico-secondary-inverse); }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .badge { font-size: 12px; padding: 0 .4rem; border-radius: 4px; background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
-    .bar { height: 8px; background: var(--pico-primary-background); border-radius: 4px; }
-    .counters { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .5rem; }
-    .counters div { border: 1px solid var(--pico-muted-border-color); border-radius: 6px; padding: .4rem .6rem; }
-    .counters b { display: block; font-size: 20px; }
-    #status { min-height: 1.5rem; }
-    #status.error { color: var(--pico-del-color); }
-    pre { white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
+    .bar { height: 8px; background: currentColor; }
+    #status.error { color: red; }
+    pre { white-space: pre-wrap; max-height: 300px; overflow: auto; }
   </style>
 </head>
 <body>
-<main class="container">
+<main>
   <h2>PMAP · Extraction admin</h2>
 
   <div class="row">
     <label>API key<input id="key" type="password" placeholder="X-API-Key" autocomplete="off"></label>
-    <button id="save-key" class="secondary">Save</button>
+    <button id="save-key">Save</button>
   </div>
   <p id="status"></p>
 
   <nav>
-    <button data-tab="runs">Runs</button>
-    <button data-tab="transactions" class="outline">Transactions</button>
-    <button data-tab="analytics" class="outline">Analytics</button>
+    <button data-tab="runs" aria-current="true">Runs</button>
+    <button data-tab="transactions">Transactions</button>
+    <button data-tab="analytics">Analytics</button>
   </nav>
 
   <section id="runs" class="tab active">
@@ -59,7 +46,7 @@
     </article>
 
     <h3>Latest runs</h3>
-    <button id="runs-refresh" class="secondary">Refresh</button>
+    <button id="runs-refresh">Refresh</button>
     <table>
       <thead><tr><th>Started</th><th>Trigger</th><th class="num">Powiats</th><th class="num">Done</th>
         <th class="num">Not published</th><th class="num">Failed</th><th>Finished</th></tr></thead>
@@ -92,7 +79,7 @@
       <tbody id="tx-body"></tbody>
     </table>
     <div class="row">
-      <button id="tx-first" class="secondary">First page</button>
+      <button id="tx-first">First page</button>
       <button id="tx-next">Next page</button>
     </div>
 
@@ -119,7 +106,7 @@
     </form>
     <table>
       <thead><tr><th>Group</th><th class="num">Count</th><th class="num">P25</th>
-        <th class="num">Median</th><th class="num">P75</th><th style="width:30%"></th></tr></thead>
+        <th class="num">Median</th><th class="num">P75</th><th></th></tr></thead>
       <tbody id="an-body"></tbody>
     </table>
   </section>
@@ -154,7 +141,8 @@ async function api(method, path, params) {
   if (response.status === 401) throw new Error("Wrong or missing API key");
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw Object.assign(new Error(JSON.stringify(body.detail ?? response.statusText)), { status: response.status });
+    const detail = body.detail ?? response.statusText;
+    throw Object.assign(new Error(typeof detail === "string" ? detail : JSON.stringify(detail)), { status: response.status });
   }
   return response.json();
 }
@@ -184,7 +172,7 @@ function formParams(form) {
 
 document.querySelectorAll("nav button").forEach((button) => {
   button.onclick = () => {
-    document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("outline", b !== button));
+    document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-current", String(b === button)));
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === button.dataset.tab));
   };
 });
@@ -217,10 +205,11 @@ async function pollRun(runId) {
       ["failed", run.failed], ["in progress", run.in_progress], ["rows inserted", run.inserted],
       ["rows updated", run.updated],
     ];
+    if (run.total === 1) counters.unshift(["current stage", run.current_stage ?? "finished"]);
     $("run-counters").replaceChildren(...counters.map(([label, value]) => {
       const div = document.createElement("div");
       const b = document.createElement("b");
-      b.textContent = fmt(value);
+      b.textContent = typeof value === "string" ? value : fmt(value);
       div.append(b, label);
       return div;
     }));

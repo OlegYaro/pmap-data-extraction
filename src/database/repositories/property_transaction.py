@@ -88,14 +88,21 @@ class StagedTransactionRepository:
             stmt = stmt.where(PropertyTransaction.floor <= query.floor_max)
         if query.rooms:
             stmt = stmt.where(PropertyTransaction.rooms.in_(query.rooms))
-        if query.voivodeship_code is not None:
-            stmt = stmt.where(PropertyTransaction.powiat_code.startswith(query.voivodeship_code))
+        if query.voivodeship_code:
+            # A range, not LIKE 'xx%': the btree on powiat_code serves it in any collation.
+            stmt = stmt.where(
+                PropertyTransaction.powiat_code >= query.voivodeship_code,
+                PropertyTransaction.powiat_code < _prefix_end(query.voivodeship_code),
+            )
         if query.address is not None:
             stmt = stmt.where(PropertyTransaction.address.icontains(query.address, autoescape=True))
         if query.exclusion_reason:
             reasons = [reason for reason in query.exclusion_reason if reason != "clean"]
-            allowed = [PropertyTransaction.exclusion_reason.in_(reasons)]
+            allowed = []
+            if reasons:
+                allowed.append(PropertyTransaction.exclusion_reason.in_(reasons))
             if "clean" in query.exclusion_reason:
+                # Exactly the predicate of the partial indexes of clean rows.
                 allowed.append(PropertyTransaction.exclusion_reason.is_(None))
             stmt = stmt.where(or_(*allowed))
         return stmt
@@ -106,14 +113,10 @@ class StagedTransactionRepository:
     ) -> list[PropertyTransaction]:
         """One page of transactions matching the query, ordered by the sort field and id."""
         column = getattr(PropertyTransaction, query.sort)
-        desc = query.order == "desc"
         stmt = StagedTransactionRepository.apply_filters(select(PropertyTransaction), query)
         if query.after_id is not None:
             stmt = stmt.where(_after(column, query))
-        stmt = stmt.order_by(
-            (column.desc() if desc else column.asc()).nulls_last(),
-            PropertyTransaction.id.desc() if desc else PropertyTransaction.id.asc(),
-        ).limit(query.limit)
+        stmt = stmt.order_by(*_order_by(column, query)).limit(query.limit)
         return list(await session.scalars(stmt))
 
     @staticmethod
@@ -156,6 +159,31 @@ class StagedTransactionRepository:
         return row
 
 
+def _is_nullable(column) -> bool:
+    return column.property.columns[0].nullable
+
+
+def _prefix_end(prefix: str) -> str:
+    """The smallest string above every string that starts with `prefix`: '14' gives '15'."""
+    return prefix[:-1] + chr(ord(prefix[-1]) + 1)
+
+
+def _order_by(column, query: TransactionListQuery) -> list:
+    """The sort field, empty values last, then id as the tie-break.
+
+    A column that can never be empty gets no NULLS clause, and sorting by id gets no tie-break:
+    a plain btree scan (either direction) then serves the order. `DESC NULLS LAST` does not match
+    the default btree, so the nullable columns have indexes declared with exactly that order.
+    """
+    desc = query.order == "desc"
+    primary = column.desc() if desc else column.asc()
+    if _is_nullable(column):
+        primary = primary.nulls_last()
+    if query.sort == "id":
+        return [primary]
+    return [primary, PropertyTransaction.id.desc() if desc else PropertyTransaction.id.asc()]
+
+
 def _after(column, query: TransactionListQuery):
     """Rows after the last row of the previous page; empty sort values come last."""
     desc = query.order == "desc"
@@ -167,8 +195,10 @@ def _after(column, query: TransactionListQuery):
     if query.after_value is None:
         return and_(column.is_(None), after_id)
     value = cast(literal(query.after_value, String), column.type)
-    return or_(
+    later = [
         column < value if desc else column > value,
         and_(column == value, after_id),
-        column.is_(None),
-    )
+    ]
+    if _is_nullable(column):
+        later.append(column.is_(None))
+    return or_(*later)

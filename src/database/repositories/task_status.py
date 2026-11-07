@@ -86,9 +86,17 @@ class DataExtractionTaskRepository:
         inserted = (PropertyTransaction.created_at == PropertyTransaction.updated_at).label(
             "inserted"
         )
+        # run_id has no index (every run rewrites it on all rows it touches, which would stop
+        # cheap in-place updates), so the powiats of the run narrow the read to their own rows.
+        run_powiats = select(DataExtractionTask.territory_code).where(
+            DataExtractionTask.run_id == run_id
+        )
         stmt = (
             select(PropertyTransaction.exclusion_reason, inserted, func.count().label("count"))
-            .where(PropertyTransaction.run_id == run_id)
+            .where(
+                PropertyTransaction.run_id == run_id,
+                PropertyTransaction.powiat_code.in_(run_powiats),
+            )
             .group_by(PropertyTransaction.exclusion_reason, inserted)
         )
         return list((await session.execute(stmt)).mappings())

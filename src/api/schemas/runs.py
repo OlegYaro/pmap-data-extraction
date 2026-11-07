@@ -38,6 +38,7 @@ class RunStatusResponse(BaseModel):
     not_published: int
     failed: int
     in_progress: int
+    current_stage: TaskStatusEnum | None = None
     failed_tasks: list[FailedTaskResponse]
     inserted: int
     updated: int
