@@ -1,10 +1,15 @@
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models.property_transaction import PropertyTransaction
 from database.models.task_status import DataExtractionTask, TaskStatusEnum, TaskTriggerEnum
+
+RUN_START_LOCK_KEY = 7_400_001
+# Unfinished tasks older than this belong to a dead run and don't block new ones.
+RUN_TIMEOUT = timedelta(hours=24)
 
 
 class DataExtractionTaskRepository:
@@ -81,9 +86,17 @@ class DataExtractionTaskRepository:
         inserted = (PropertyTransaction.created_at == PropertyTransaction.updated_at).label(
             "inserted"
         )
+        # run_id has no index (every run rewrites it on all rows it touches, which would stop
+        # cheap in-place updates), so the powiats of the run narrow the read to their own rows.
+        run_powiats = select(DataExtractionTask.territory_code).where(
+            DataExtractionTask.run_id == run_id
+        )
         stmt = (
             select(PropertyTransaction.exclusion_reason, inserted, func.count().label("count"))
-            .where(PropertyTransaction.run_id == run_id)
+            .where(
+                PropertyTransaction.run_id == run_id,
+                PropertyTransaction.powiat_code.in_(run_powiats),
+            )
             .group_by(PropertyTransaction.exclusion_reason, inserted)
         )
         return list((await session.execute(stmt)).mappings())
@@ -113,3 +126,17 @@ class DataExtractionTaskRepository:
             .limit(limit)
         )
         return list((await session.execute(stmt)).mappings())
+
+    @staticmethod
+    async def get_active_run_id(session: AsyncSession) -> uuid.UUID | None:
+        """Lock run starts until the transaction ends and return the unfinished run, if any."""
+        await session.execute(select(func.pg_advisory_xact_lock(RUN_START_LOCK_KEY)))
+        stmt = (
+            select(DataExtractionTask.run_id)
+            .where(
+                DataExtractionTask.finished_at.is_(None),
+                DataExtractionTask.started_at > func.now() - RUN_TIMEOUT,
+            )
+            .limit(1)
+        )
+        return await session.scalar(stmt)

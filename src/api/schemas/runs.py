@@ -29,6 +29,7 @@ class RunStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     run_id: uuid.UUID
+    started_at: datetime | None = None
     total: int
     downloaded: int
     assigned: int
@@ -37,6 +38,7 @@ class RunStatusResponse(BaseModel):
     not_published: int
     failed: int
     in_progress: int
+    current_stage: TaskStatusEnum | None = None
     failed_tasks: list[FailedTaskResponse]
     inserted: int
     updated: int

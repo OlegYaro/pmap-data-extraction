@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from api.schemas.runs import RunListItemResponse, RunStartedResponse, RunStatusResponse
 from database.models.task_status import TaskTriggerEnum
+from database.repositories.task_status import DataExtractionTaskRepository
 from database.session import DbSession
 from jobs.tasks import orchestrate_run
 from polish_national_registry.status_service import ExtractionTaskStateService
@@ -15,8 +16,15 @@ router = APIRouter(tags=["runs"])
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
-async def start_pipeline(territory_code: str | None = Query(default=None)) -> RunStartedResponse:
+async def start_pipeline(
+    db: DbSession, territory_code: str | None = Query(default=None)
+) -> RunStartedResponse:
     """Manual start of the pipeline for a given powiat (or all powiats if not specified)."""
+    if active_run_id := await DataExtractionTaskRepository.get_active_run_id(db):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Run {active_run_id} is still in progress",
+        )
     run_id = uuid.uuid4()
     await orchestrate_run.kiq(
         run_id=str(run_id), territory_code=territory_code, trigger=TaskTriggerEnum.manual

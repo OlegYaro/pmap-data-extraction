@@ -31,6 +31,7 @@ class RunSummaryDTO(BaseModel):
     """Counters of one run and the failed powiats with their traces."""
 
     run_id: uuid.UUID
+    started_at: datetime | None = None
     total: int
     downloaded: int
     assigned: int
@@ -39,6 +40,8 @@ class RunSummaryDTO(BaseModel):
     not_published: int
     failed: int
     in_progress: int
+    # Status of the unfinished task updated last, None when the run is finished.
+    current_stage: TaskStatusEnum | None = None
     failed_tasks: list[DataExtractionTaskDTO]
     # Rows the run wrote: new, changed, and excluded among them by reason.
     inserted: int = 0
@@ -154,6 +157,10 @@ class ExtractionTaskStateService:
         loaded = statuses.count(TaskStatusEnum.done)
         not_published = statuses.count(TaskStatusEnum.not_published)
         failed_tasks = [task for task in tasks if task.status == TaskStatusEnum.failed]
+        unfinished = [task for task in tasks if task.finished_at is None]
+        current_stage = (
+            max(unfinished, key=lambda task: task.updated_at).status if unfinished else None
+        )
         inserted, updated, excluded = 0, 0, Counter()
         for row in await DataExtractionTaskRepository.run_summary(session, run_id):
             if row["inserted"]:
@@ -165,6 +172,7 @@ class ExtractionTaskStateService:
 
         return RunSummaryDTO(
             run_id=run_id,
+            started_at=min((task.started_at for task in tasks), default=None),
             total=len(tasks),
             downloaded=downloaded,
             assigned=assigned,
@@ -173,6 +181,7 @@ class ExtractionTaskStateService:
             not_published=not_published,
             failed=len(failed_tasks),
             in_progress=len(tasks) - loaded - not_published - len(failed_tasks),
+            current_stage=current_stage,
             failed_tasks=failed_tasks,
             inserted=inserted,
             updated=updated,

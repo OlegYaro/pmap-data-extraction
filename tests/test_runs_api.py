@@ -62,13 +62,26 @@ async def test_list_runs(client, persist):
 
 async def test_get_run_returns_quality_summary(client, persist):
     past = datetime(2025, 1, 1, tzinfo=UTC)
+    # The summary reads the rows of the powiats of the run's tasks (powiat_code is indexed).
     await persist(
-        TaskFactory(status=TaskStatusEnum.done),
-        TransactionFactory(run_id=RUN_ID),
-        TransactionFactory(run_id=RUN_ID, exclusion_reason="non_market"),
-        TransactionFactory(run_id=RUN_ID, created_at=past),
+        TaskFactory(status=TaskStatusEnum.done, territory_code="1465"),
+        TransactionFactory(run_id=RUN_ID, powiat_code="1465"),
+        TransactionFactory(run_id=RUN_ID, powiat_code="1465", exclusion_reason="non_market"),
+        TransactionFactory(run_id=RUN_ID, powiat_code="1465", created_at=past),
     )
 
     body = (await client.get(f"{RUNS_URL}/{RUN_ID}")).json()
 
     assert (body["inserted"], body["updated"], body["excluded"]) == (2, 1, {"non_market": 1})
+
+
+async def test_summary_ignores_rows_of_powiats_outside_the_run(client, persist):
+    await persist(
+        TaskFactory(status=TaskStatusEnum.done, territory_code="1465"),
+        TransactionFactory(run_id=RUN_ID, powiat_code="1465"),
+        TransactionFactory(run_id=RUN_ID, powiat_code="0264", exclusion_reason="non_market"),
+    )
+
+    body = (await client.get(f"{RUNS_URL}/{RUN_ID}")).json()
+
+    assert (body["inserted"], body["updated"], body["excluded"]) == (1, 0, {})

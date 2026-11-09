@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from taskiq import TaskiqDepends
 
 from database.models.task_status import TaskTriggerEnum
+from database.repositories.task_status import DataExtractionTaskRepository
 from database.session import SessionFactory
 from jobs import pipeline
 from jobs.broker import broker
@@ -29,6 +30,10 @@ async def orchestrate_run(
     session: Session, run_id: str, territory_code: str | None, trigger: TaskTriggerEnum
 ) -> None:
     """Create a task per powiat of the run and queue a pipeline for each."""
+    if active_run_id := await DataExtractionTaskRepository.get_active_run_id(session):
+        log.warning("run_rejected trigger=%s active_run_id=%s", trigger, active_run_id)
+        return
+
     territory_codes = await pipeline.resolve_territories(session, territory_code)
     if not territory_codes:
         raise RuntimeError("prefix_map is empty - load PRG first")
